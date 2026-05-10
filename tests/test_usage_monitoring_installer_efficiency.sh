@@ -26,9 +26,21 @@ printf 'Checking pmon logger template avoids read -t busy-loop pattern...\n'
 ! grep -q 'read -r -t' <<< "$logger_template" \
   || fail 'logger template must not use read -t as sleep surrogate'
 
-printf 'Checking pmon logger template uses sleep-based waiting...\n'
-grep -q 'sleep 60' <<< "$logger_template" \
-  || fail 'logger template must sleep between day rollover checks'
+printf 'Checking pmon logger template uses a sleep-until-midnight helper...\n'
+grep -q 'seconds_until_next_day()' <<< "$logger_template" \
+  || fail 'logger template must define seconds_until_next_day for rollover timing'
+
+printf 'Checking pmon logger template avoids minute polling loop...\n'
+! grep -q 'sleep 60' <<< "$logger_template" \
+  || fail 'logger template must not poll every minute for day rollover'
+
+printf 'Checking pmon logger template avoids repeated kill -0 probes...\n'
+! grep -q 'while kill -0' <<< "$logger_template" \
+  || fail 'logger template must not spin on kill -0 for day rollover detection'
+
+printf 'Checking pmon logger template starts a rollover sleeper...\n'
+grep -q 'sleep "\$(seconds_until_next_day)"' <<< "$logger_template" \
+  || fail 'logger template must sleep until midnight before rotating pmon'
 
 printf 'Checking pmon logger template uses fork-free date builtin...\n'
 grep -q "printf '%(%Y%m%d)T' -1" <<< "$logger_template" \
