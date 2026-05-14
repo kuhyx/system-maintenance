@@ -1,0 +1,20 @@
+[Unit]
+Description=Resource-capped slice for user monitoring / status-bar scripts
+Documentation=https://www.freedesktop.org/software/systemd/man/systemd.slice.html
+
+[Slice]
+# Cap the entire slice at 50% of one CPU and 512 MiB of RAM. If i3blocks or
+# any other status-bar tooling enters a fork-storm regime (as was observed
+# when polling scripts forked awk/tr/grep/bc every tick), the kernel will
+# throttle the slice rather than let it eat the box.
+CPUQuota=50%
+# MemorySwapMax=0 is required on systems with zram: without it, a cgroup
+# hitting MemoryMax thrashes zram instead of being OOM-killed, freezing
+# the machine. See .github/skills/oom-prevention/SKILL.md.
+MemoryMax=512M
+MemorySwapMax=0
+TasksMax=256
+
+# Make sure killing the slice reaps every descendant.
+[Install]
+WantedBy=default.target

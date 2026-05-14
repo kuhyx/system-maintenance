@@ -1,0 +1,38 @@
+/var/log/periodic-system-maintenance.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 root root
+    postrotate
+        systemctl reload-or-restart rsyslog > /dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/hosts-file-monitor.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 root root
+    postrotate
+        systemctl reload-or-restart rsyslog > /dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/auto-system-update.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 root root
+    postrotate
+        systemctl reload-or-restart rsyslog > /dev/null 2>&1 || true
+    endscript
+}

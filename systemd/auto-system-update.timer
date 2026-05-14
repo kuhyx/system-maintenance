@@ -1,0 +1,14 @@
+[Unit]
+Description=Run Automatic System Update daily
+Requires=auto-system-update.service
+
+[Timer]
+# Run once per day at 04:00
+OnCalendar=*-*-* 04:00:00
+# Randomize by up to 30 minutes to avoid mirror congestion
+RandomizedDelaySec=1800
+# If a run was missed (e.g. machine was off), run on next boot
+Persistent=true
+
+[Install]
+WantedBy=timers.target

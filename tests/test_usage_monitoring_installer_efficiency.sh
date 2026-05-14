@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
-INSTALLER="$REPO_DIR/scripts/system-maintenance/bin/install_usage_monitoring.sh"
+INSTALLER="$REPO_DIR/scripts/periodic_background/system-maintenance/bin/install_usage_monitoring.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2

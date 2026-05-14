@@ -1,0 +1,16 @@
+[Unit]
+Description=Run Periodic System Maintenance every hour
+Requires=periodic-system-maintenance.service
+
+[Timer]
+# Run every hour
+OnCalendar=hourly
+# Run on system startup (5 minutes after boot)
+OnBootSec=5min
+# Add randomization to prevent all systems from running simultaneously
+RandomizedDelaySec=300
+# Ensure timer persists across reboots
+Persistent=true
+
+[Install]
+WantedBy=timers.target

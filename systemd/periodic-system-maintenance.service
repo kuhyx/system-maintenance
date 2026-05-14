@@ -1,0 +1,21 @@
+[Unit]
+Description=Periodic System Maintenance (Pacman Wrapper & Hosts File)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/periodic-system-maintenance.sh
+StandardOutput=journal
+StandardError=journal
+
+# Timeout settings
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+# Restart settings
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+[Unit]
+Description=System Maintenance on Startup (Pacman Wrapper & Hosts File)
+After=network-online.target systemd-resolved.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/periodic-system-maintenance.sh
+StandardOutput=journal
+StandardError=journal
+RemainAfterExit=yes
+
+# Timeout settings
+TimeoutStartSec=300
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

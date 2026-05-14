@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
-TARGET_SCRIPT="$REPO_DIR/scripts/system-maintenance/bin/hosts-file-monitor.sh"
+TARGET_SCRIPT="$REPO_DIR/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -29,8 +29,8 @@ trap cleanup EXIT
 
 WORKTREE="$TMP_DIR/worktree"
 BIN_DIR="$TMP_DIR/bin"
-mkdir -p "$WORKTREE/scripts/system-maintenance/bin" "$BIN_DIR"
-cp "$TARGET_SCRIPT" "$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh"
+mkdir -p "$WORKTREE/scripts/periodic_background/system-maintenance/bin" "$BIN_DIR"
+cp "$TARGET_SCRIPT" "$WORKTREE/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh"
 
 cat >"$BIN_DIR/tee" <<'EOF'
 #!/bin/bash
@@ -82,22 +82,22 @@ make_hosts_file() {
 printf 'Checking intact hosts files are accepted...\n'
 hosts_ok="$TMP_DIR/hosts-ok"
 make_hosts_file "$hosts_ok" 1 1
-ok_result=$(run_shell "source '$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh'; HOSTS_FILE='$hosts_ok'; if needs_restoration; then printf restore; else printf ok; fi")
+ok_result=$(run_shell "source '$WORKTREE/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh'; HOSTS_FILE='$hosts_ok'; if needs_restoration; then printf restore; else printf ok; fi")
 assert_equals 'ok' "$ok_result" 'needs_restoration should accept intact hosts files'
 
 printf 'Checking missing markers trigger restoration...\n'
 hosts_missing="$TMP_DIR/hosts-missing"
 make_hosts_file "$hosts_missing" 1 0
-missing_result=$(run_shell "source '$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh'; HOSTS_FILE='$hosts_missing'; if needs_restoration; then printf restore; else printf ok; fi")
+missing_result=$(run_shell "source '$WORKTREE/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh'; HOSTS_FILE='$hosts_missing'; if needs_restoration; then printf restore; else printf ok; fi")
 assert_equals 'restore' "$missing_result" 'needs_restoration should reject files missing required markers'
 
 printf 'Checking inotify path is preferred when available...\n'
-inotify_mode=$(run_shell "source '$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh'; monitor_with_inotify() { printf inotify; }; monitor_with_polling() { printf polling; }; start_monitoring")
+inotify_mode=$(run_shell "source '$WORKTREE/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh'; monitor_with_inotify() { printf inotify; }; monitor_with_polling() { printf polling; }; start_monitoring")
 assert_equals 'inotify' "$inotify_mode" 'start_monitoring should prefer inotifywait when present'
 
 printf 'Checking polling fallback is used without inotifywait...\n'
 mv "$BIN_DIR/inotifywait" "$BIN_DIR/inotifywait.off"
-poll_mode=$(run_shell "source '$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh'; monitor_with_inotify() { printf inotify; }; monitor_with_polling() { printf polling; }; start_monitoring")
+poll_mode=$(run_shell "source '$WORKTREE/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh'; monitor_with_inotify() { printf inotify; }; monitor_with_polling() { printf polling; }; start_monitoring")
 mv "$BIN_DIR/inotifywait.off" "$BIN_DIR/inotifywait"
 assert_equals 'polling' "$poll_mode" 'start_monitoring should fall back to polling when inotifywait is absent'
 
@@ -107,7 +107,7 @@ sleep_log="$TMP_DIR/sleep.log"
 counter_file="$TMP_DIR/debounce-count.log"
 : >"$counter_file"
 debounce_calls=$(env -i PATH="$BIN_DIR" HOSTS_FILE_MONITOR_SKIP_MAIN=1 SLEEP_LOG="$sleep_log" COUNTER_FILE="$counter_file" MOCK_INOTIFY_OUTPUT=$'/etc/hosts MODIFY 2026-01-01 00:00:00\n/etc/hosts ATTRIB 2026-01-01 00:00:01\n/etc/hosts MODIFY 2026-01-01 00:00:02' /bin/bash -c \
-  "source '$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh'; \
+  "source '$WORKTREE/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh'; \
   needs_restoration() { printf 'x\n' >> \"\$COUNTER_FILE\"; return 1; }; \
    idx=0; \
    current_epoch() { \
@@ -129,7 +129,7 @@ fi
 
 printf 'Checking polling wait helper enforces delay on /dev/null stdin...\n'
 wait_elapsed=$(env -i PATH="/usr/bin:/bin" HOSTS_FILE_MONITOR_SKIP_MAIN=1 /bin/bash -c \
-  "source '$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh'; \
+  "source '$WORKTREE/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh'; \
    start=\$(printf '%(%s)T' -1); \
    wait_seconds 1; \
    end=\$(printf '%(%s)T' -1); \
