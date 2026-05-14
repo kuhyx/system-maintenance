@@ -36,7 +36,8 @@ cp "$TARGET_SCRIPT" "$WORKTREE/scripts/system-maintenance/bin/shutdown-timer-mon
 cat >"$BIN_DIR/busctl" <<'EOF'
 #!/bin/bash
 if [[ $1 == monitor ]]; then
-  printf '%s\n' "${MOCK_BUSCTL_LINE:-no relevant event}" | while read -r line; do
+  payload=${MOCK_BUSCTL_LINES:-${MOCK_BUSCTL_LINE:-no relevant event}}
+  printf '%b\n' "$payload" | while read -r line; do
     printf '%s\n' "$line"
   done
   exit 0
@@ -106,11 +107,64 @@ run_case() {
   fi
 }
 
+run_dbus_throttle_case() {
+  local ts_sequence="$1"
+  local expected_calls="$2"
+  local check_interval="${3:-30}"
+  local calls
+  local counter_file="$TMP_DIR/timer_checks.log"
+
+  : >"$counter_file"
+
+  calls=$(env -i PATH="$BIN_DIR" SHUTDOWN_TIMER_MONITOR_SKIP_MAIN=1 MOCK_BUSCTL_LINES="day-specific-shutdown.timer\nday-specific-shutdown.timer\nday-specific-shutdown.timer" MOCK_TS_SEQUENCE="$ts_sequence" COUNTER_FILE="$counter_file" TEST_CHECK_INTERVAL="$check_interval" /bin/bash -c '
+    source "$1"
+    CHECK_INTERVAL="$TEST_CHECK_INTERVAL"
+    timer_needs_restoration() { printf "x\n" >> "$COUNTER_FILE"; return 1; }
+    restore_timer() { :; }
+    mock_idx=0
+    IFS=" " read -r -a mock_ts <<< "$MOCK_TS_SEQUENCE"
+    current_epoch() {
+      local out_var="${1:-}"
+      local ts_value="${mock_ts[$mock_idx]:-0}"
+      mock_idx=$((mock_idx + 1))
+
+      if [[ -n $out_var ]]; then
+        printf -v "$out_var" '%s' "$ts_value"
+      else
+        printf "%s\n" "$ts_value"
+      fi
+    }
+    monitor_with_dbus >/dev/null 2>&1 || true
+    timer_checks=0
+    while IFS= read -r _; do
+      timer_checks=$((timer_checks + 1))
+    done < "$COUNTER_FILE"
+    printf "%s" "$timer_checks"
+  ' _ "$WORKTREE/scripts/system-maintenance/bin/shutdown-timer-monitor.sh")
+
+  assert_equals "$expected_calls" "$calls" 'monitor_with_dbus should throttle repeated relevant events'
+}
+
 printf 'Checking D-Bus path is preferred when busctl exists...\n'
 run_case dbus 1
 
 printf 'Checking polling fallback is used when busctl is absent...\n'
 run_case polling 0
+
+printf 'Checking D-Bus monitor throttles repeated events within interval...\n'
+run_dbus_throttle_case '100 105 109' '1'
+
+printf 'Checking D-Bus monitor can process all events when interval is zero...\n'
+run_dbus_throttle_case '100 101 102' '3' '0'
+
+printf 'Checking wait helper enforces delay even with /dev/null stdin...\n'
+wait_elapsed=$(env -i PATH="/usr/bin:/bin" SHUTDOWN_TIMER_MONITOR_SKIP_MAIN=1 /bin/bash -c \
+  "source '$WORKTREE/scripts/system-maintenance/bin/shutdown-timer-monitor.sh'; \
+   start=\$(printf '%(%s)T' -1); \
+   wait_seconds 1; \
+   end=\$(printf '%(%s)T' -1); \
+   printf '%s' \$((end-start))" </dev/null)
+assert_equals '1' "$wait_elapsed" 'wait_seconds should not return immediately on /dev/null stdin'
 
 printf 'Checking installer template stays in sync with the event-driven monitor...\n'
 grep -Fq 'monitor_with_dbus()' "$SETUP_SCRIPT" \
@@ -119,5 +173,19 @@ grep -Fq 'start_monitoring()' "$SETUP_SCRIPT" \
   || fail 'setup_midnight_shutdown.sh should install the start_monitoring dispatcher'
 grep -Fq 'if command -v busctl &>/dev/null; then' "$SETUP_SCRIPT" \
   || fail 'setup_midnight_shutdown.sh should prefer busctl when available'
+grep -Fq 'current_epoch now_ts' "$SETUP_SCRIPT" \
+  || fail 'setup_midnight_shutdown.sh should use out-var epoch helper in D-Bus throttling path'
+if grep -Fq 'now_ts=$(current_epoch)' "$SETUP_SCRIPT"; then
+  fail 'setup_midnight_shutdown.sh should avoid subshell epoch capture in D-Bus path'
+fi
+if grep -Fq 'now_ts=$(current_epoch)' "$TARGET_SCRIPT"; then
+  fail 'runtime shutdown monitor should avoid subshell epoch capture in D-Bus path'
+fi
+grep -Fq 'OnUnitActiveSec=300' "$SETUP_SCRIPT" \
+  || fail 'setup_midnight_shutdown.sh should run watchdog timer at 300s cadence'
+grep -Fq 'wait_seconds()' "$SETUP_SCRIPT" \
+  || fail 'setup_midnight_shutdown.sh should install builtin wait helper in polling fallback'
+grep -Fq 'wait_seconds "$CHECK_INTERVAL"' "$TARGET_SCRIPT" \
+  || fail 'runtime shutdown monitor polling fallback should use builtin wait helper'
 
 printf 'shutdown-timer-monitor.sh regression checks passed.\n'

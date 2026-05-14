@@ -101,4 +101,39 @@ poll_mode=$(run_shell "source '$WORKTREE/scripts/system-maintenance/bin/hosts-fi
 mv "$BIN_DIR/inotifywait.off" "$BIN_DIR/inotifywait"
 assert_equals 'polling' "$poll_mode" 'start_monitoring should fall back to polling when inotifywait is absent'
 
+printf 'Checking inotify event path avoids per-event sleep and debounces bursts...\n'
+sleep_log="$TMP_DIR/sleep.log"
+: >"$sleep_log"
+counter_file="$TMP_DIR/debounce-count.log"
+: >"$counter_file"
+debounce_calls=$(env -i PATH="$BIN_DIR" HOSTS_FILE_MONITOR_SKIP_MAIN=1 SLEEP_LOG="$sleep_log" COUNTER_FILE="$counter_file" MOCK_INOTIFY_OUTPUT=$'/etc/hosts MODIFY 2026-01-01 00:00:00\n/etc/hosts ATTRIB 2026-01-01 00:00:01\n/etc/hosts MODIFY 2026-01-01 00:00:02' /bin/bash -c \
+  "source '$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh'; \
+  needs_restoration() { printf 'x\n' >> \"\$COUNTER_FILE\"; return 1; }; \
+   idx=0; \
+   current_epoch() { \
+     local out_var=\"\${1:-}\"; \
+     local ts; \
+     case \$idx in 0) ts='100';; 1) ts='101';; 2) ts='106';; *) ts='999';; esac; \
+     idx=\$((idx + 1)); \
+     if [[ -n \$out_var ]]; then printf -v \"\$out_var\" '%s' \"\$ts\"; else printf '%s\\n' \"\$ts\"; fi; \
+   }; \
+   monitor_with_inotify >/dev/null 2>&1 || true; \
+  total=0; \
+  while IFS= read -r _; do total=\$((total + 1)); done < \"\$COUNTER_FILE\"; \
+  printf '%s' \"\$total\"")
+assert_equals '2' "$debounce_calls" 'monitor_with_inotify should debounce rapid successive events'
+
+if [[ -s $sleep_log ]]; then
+  fail 'monitor_with_inotify should not call sleep in the event path'
+fi
+
+printf 'Checking polling wait helper enforces delay on /dev/null stdin...\n'
+wait_elapsed=$(env -i PATH="/usr/bin:/bin" HOSTS_FILE_MONITOR_SKIP_MAIN=1 /bin/bash -c \
+  "source '$WORKTREE/scripts/system-maintenance/bin/hosts-file-monitor.sh'; \
+   start=\$(printf '%(%s)T' -1); \
+   wait_seconds 1; \
+   end=\$(printf '%(%s)T' -1); \
+   printf '%s' \$((end-start))" </dev/null)
+assert_equals '1' "$wait_elapsed" 'wait_seconds should not return immediately on /dev/null stdin'
+
 printf 'hosts-file-monitor.sh regression checks passed.\n'
