@@ -25,10 +25,13 @@ from _usage_report_types import (
 # atop parseable output layout (atop 2.x, same on Arch/Debian/Ubuntu):
 # 0 label, 1 host, 2 epoch, 3 YYYY/MM/DD, 4 HH:MM:SS, 5 interval_s,
 # then per-process fields starting at index 6.
-# PRC per-proc: pid name(parens) state utime_ticks stime_ticks ...
+# PRC per-proc: pid name(parens) state HZ utime_ticks stime_ticks ...
+# NOTE: atop inserts its clock-tick rate (HZ) between `state` and `utime`
+# (the PRC analogue of the pagesize field PRM inserts before its memory
+# columns); utime/stime therefore live two and three slots past `state`.
 _PRC_PID_IDX = 6
 _PRC_NAME_IDX = 7
-_PRC_MIN_LEN = 11
+_PRC_MIN_LEN = 12
 # PRM per-proc: pid name state pagesz_b vsize_kb rsize_kb ...
 _PRM_PID_IDX = 6
 _PRM_NAME_IDX = 7
@@ -61,13 +64,39 @@ def _run(cmd: list[str]) -> str:
     return proc.stdout
 
 
-def _iter_atop_lines(log: Path, labels: str) -> Iterator[str]:
+def _atop_read_cmd(
+    log: Path,
+    labels: str,
+    begin: str | None,
+    end: str | None,
+) -> list[str]:
+    """Build an `atop -r` command, optionally bounded by begin/end times.
+
+    *begin*/*end* are atop `-b`/`-e` arguments (`[YYYYMMDD]hhmm[ss]`) used to
+    restrict replay to a sub-window of the day's log, so a "since last report"
+    run does not double-count the part of the first day already reported.
+    """
+    cmd = ["atop", "-r", str(log)]
+    if begin is not None:
+        cmd += ["-b", begin]
+    if end is not None:
+        cmd += ["-e", end]
+    cmd += ["-P", labels]
+    return cmd
+
+
+def _iter_atop_lines(
+    log: Path,
+    labels: str,
+    begin: str | None = None,
+    end: str | None = None,
+) -> Iterator[str]:
     """Stream `atop -r LOG -P LABELS` stdout line-by-line.
 
     Uses `Popen` so the report can show progress while atop is still
     decoding its binary log, rather than buffering the whole output.
     """
-    cmd = ["atop", "-r", str(log), "-P", labels]
+    cmd = _atop_read_cmd(log, labels, begin, end)
     with subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -112,10 +141,13 @@ def _parse_prc(parts: list[str], pid_cpu: dict[int, _PidCpu]) -> None:
     except (ValueError, IndexError):
         return
     name, after = _parse_name(parts, _PRC_NAME_IDX)
-    # After name comes: state utime stime ...
+    # After name comes: state HZ utime stime ...  (HZ is atop's clock-tick
+    # rate; skipping it is what keeps a constant 100 from being charged as
+    # CPU to every record — the bug that made cpu-seconds collapse to PID
+    # count for short-lived processes).
     try:
-        utime = int(parts[after + 1])
-        stime = int(parts[after + 2])
+        utime = int(parts[after + 2])
+        stime = int(parts[after + 3])
     except (ValueError, IndexError):
         return
     pid_cpu.setdefault(pid, _PidCpu()).observe(name, utime + stime)
@@ -153,6 +185,8 @@ def _window_from_epochs(epochs: set[int]) -> _Window:
         distinct_samples=len(ordered),
         interval_s=interval,
         seconds=ordered[-1] - ordered[0],
+        start_epoch=ordered[0],
+        end_epoch=ordered[-1],
     )
 
 
@@ -163,12 +197,18 @@ def _atop_agg_binary() -> Path | None:
     is unavailable, in which case callers use the pure-Python parser.
     """
     src_c = _ATOP_AGG_SRC_DIR / "atop_agg.c"
-    if _ATOP_AGG_CACHE_BIN.exists() and (
-        not src_c.exists()
-        or src_c.stat().st_mtime <= _ATOP_AGG_CACHE_BIN.stat().st_mtime
+    if not src_c.exists():
+        # Source tree is gone (relocated/extracted): never trust an orphaned
+        # cached binary whose provenance we can no longer verify against
+        # source — a stale build can silently carry parsing bugs. Fall back to
+        # the pure-Python parser instead.
+        return None
+    if (
+        _ATOP_AGG_CACHE_BIN.exists()
+        and src_c.stat().st_mtime <= _ATOP_AGG_CACHE_BIN.stat().st_mtime
     ):
         return _ATOP_AGG_CACHE_BIN
-    if not src_c.exists() or shutil.which("cc") is None:
+    if shutil.which("cc") is None:
         return None
     _ATOP_AGG_CACHE_BIN.parent.mkdir(parents=True, exist_ok=True)
     make_cmd = ["make", "-s", "-C", str(_ATOP_AGG_SRC_DIR), "atop_agg"]
@@ -218,6 +258,8 @@ def _window_from_native(parts: list[str]) -> _Window:
         distinct_samples=n_epochs,
         interval_s=int(interval_s),
         seconds=end_epoch - start_epoch,
+        start_epoch=start_epoch,
+        end_epoch=end_epoch,
     )
 
 
@@ -225,12 +267,14 @@ def _aggregate_atop_native(
     log: Path,
     progress: _Progress,
     binary: Path,
+    begin: str | None = None,
+    end: str | None = None,
 ) -> tuple[dict[str, ProcAgg], _Window]:
     """Aggregate via `atop | atop_agg`; return `(by_name, window)`."""
     progress.start_stage("atop: parse PRC+PRM (native)")
     agg_map: dict[str, ProcAgg] = {}
     window = _Window()
-    atop_cmd = ["atop", "-r", str(log), "-P", "PRC,PRM"]
+    atop_cmd = _atop_read_cmd(log, "PRC,PRM", begin, end)
     agg_cmd = [str(binary)]
     with (
         subprocess.Popen(
@@ -265,16 +309,21 @@ def _aggregate_atop_native(
 def aggregate_atop(
     log: Path,
     progress: _Progress,
+    begin: str | None = None,
+    end: str | None = None,
 ) -> tuple[dict[str, ProcAgg], _Window]:
     """Stream PRC+PRM records, fold them into `{name: ProcAgg}`, return window.
 
     Prefers the native `atop_agg` C helper (auto-built into
     ``~/.cache/usage_report/``) for ~7x speedup on full-day logs, falling
     back to an inline Python parser when the helper is unavailable.
+
+    *begin*/*end* are optional atop `-b`/`-e` arguments that bound replay to a
+    sub-window of the day's log (used by the "since last report" mode).
     """
     binary = _atop_agg_binary()
     if binary is not None:
-        return _aggregate_atop_native(log, progress, binary)
+        return _aggregate_atop_native(log, progress, binary, begin, end)
     progress.start_stage("atop: parse PRC+PRM")
     pid_cpu: dict[int, _PidCpu] = {}
     pid_ram: dict[int, _PidRam] = {}
@@ -285,7 +334,7 @@ def aggregate_atop(
     # 10-min-interval log. The fraction is only used for the progress bar,
     # so a rough calibration is fine; it caps at 99% if we underestimate.
     est_total_bytes = log_size * 11 or 1
-    for raw in _iter_atop_lines(log, "PRC,PRM"):
+    for raw in _iter_atop_lines(log, "PRC,PRM", begin, end):
         bytes_seen += len(raw) + 1
         if not raw or raw[0] == "#" or raw.startswith("RESET") or raw == "SEP":
             continue
@@ -365,11 +414,33 @@ def _pid_comm_name(pid: int) -> str | None:
     return Path(comm).name if comm else None
 
 
+def _pmon_row_epoch(parts: list[str]) -> float | None:
+    """Local-time epoch of a pmon row from its `date`/`time` columns, or None.
+
+    pmon timestamps are naive local time (`YYYYMMDD HH:MM:SS`); `.astimezone()`
+    attaches the local offset so the result is comparable to a `begin_epoch`
+    derived the same way.
+    """
+    try:
+        stamp = _dt.datetime.strptime(
+            f"{parts[0]} {parts[1]}",
+            "%Y%m%d %H:%M:%S",
+        ).astimezone()
+    except (ValueError, IndexError):
+        return None
+    return stamp.timestamp()
+
+
 def aggregate_pmon(
     log: Path,
     progress: _Progress,
+    begin_epoch: float | None = None,
 ) -> tuple[dict[str, GpuAgg], int]:
-    """Return `({program: GpuAgg}, sample_count)` from the pmon *log*."""
+    """Return `({program: GpuAgg}, sample_count)` from the pmon *log*.
+
+    When *begin_epoch* is set, rows timestamped before it are skipped so the
+    first day of a "since last report" window starts at the previous run time.
+    """
     progress.start_stage("pmon log scan")
     agg: dict[str, GpuAgg] = {}
     samples = 0
@@ -385,6 +456,10 @@ def aggregate_pmon(
             parts = _pmon_fields(line)
             if parts is None or len(parts) < _PMON_MIN_FIELDS:
                 continue
+            if begin_epoch is not None:
+                row_epoch = _pmon_row_epoch(parts)
+                if row_epoch is not None and row_epoch < begin_epoch:
+                    continue
             samples += _ingest_pmon_row(parts, agg)
     progress.update(1.0)
     return agg, samples
@@ -414,3 +489,56 @@ def _ingest_pmon_row(parts: list[str], agg: dict[str, GpuAgg]) -> int:
     entry.peak_sm_pct = max(entry.peak_sm_pct, sm)
     entry.peak_mem_pct = max(entry.peak_mem_pct, mem)
     return 1
+
+
+def merge_proc_aggs(dst: dict[str, ProcAgg], src: dict[str, ProcAgg]) -> None:
+    """Fold one day's CPU/RAM aggregates (*src*) into the running *dst*.
+
+    CPU-seconds and RSS sample counts add across days; peak RSS is the max;
+    PID counts add (each day contributes its own distinct PIDs).
+    """
+    for name, item in src.items():
+        entry = dst.setdefault(name, ProcAgg(name=name))
+        entry.cpu_ticks += item.cpu_ticks
+        entry.peak_rss_kb = max(entry.peak_rss_kb, item.peak_rss_kb)
+        entry.rss_kb_sum += item.rss_kb_sum
+        entry.rss_samples += item.rss_samples
+        entry.extra_pids += item.pid_count
+
+
+def merge_gpu_aggs(dst: dict[str, GpuAgg], src: dict[str, GpuAgg]) -> None:
+    """Fold one day's GPU aggregates (*src*) into the running *dst*."""
+    for name, item in src.items():
+        entry = dst.setdefault(name, GpuAgg(name=name))
+        entry.sm_pct_sum += item.sm_pct_sum
+        entry.mem_pct_sum += item.mem_pct_sum
+        entry.samples += item.samples
+        entry.peak_sm_pct = max(entry.peak_sm_pct, item.peak_sm_pct)
+        entry.peak_mem_pct = max(entry.peak_mem_pct, item.peak_mem_pct)
+        entry.extra_pids += item.pid_count
+
+
+def merge_windows(windows: list[_Window]) -> _Window:
+    """Combine per-day coverage *windows* into one spanning window.
+
+    Start/end span the earliest and latest samples; ``seconds`` sums the
+    per-day coverage (not wall-clock end-start) so the denominator for average
+    CPU% reflects only the time actually monitored, excluding gap days.
+    """
+    real = [w for w in windows if w.distinct_samples]
+    if not real:
+        return _Window()
+    first = min(real, key=lambda w: w.start_epoch)
+    last = max(real, key=lambda w: w.end_epoch)
+    intervals = [w.interval_s for w in real if w.interval_s]
+    # Representative interval = the most common per-day interval, if any.
+    interval = max(set(intervals), key=intervals.count) if intervals else 0
+    return _Window(
+        start=first.start,
+        end=last.end,
+        distinct_samples=sum(w.distinct_samples for w in real),
+        interval_s=interval,
+        seconds=sum(w.seconds for w in real),
+        start_epoch=first.start_epoch,
+        end_epoch=last.end_epoch,
+    )

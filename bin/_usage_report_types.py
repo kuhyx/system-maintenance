@@ -79,6 +79,15 @@ class ProcAgg:
     rss_kb_sum: int = 0
     rss_samples: int = 0
     pid_set: set[int] = field(default_factory=set)
+    # PID counts folded in when merging per-day aggregates. Tracked as a plain
+    # integer (not by extending `pid_set`) because the native parser stores a
+    # synthetic `range(n)` set whose union across days would collapse counts.
+    extra_pids: int = 0
+
+    @property
+    def pid_count(self) -> int:
+        """Distinct PIDs seen, including those merged from other day windows."""
+        return len(self.pid_set) + self.extra_pids
 
     @property
     def cpu_seconds(self) -> float:
@@ -109,6 +118,13 @@ class GpuAgg:
     peak_sm_pct: float = 0.0
     peak_mem_pct: float = 0.0
     pid_set: set[int] = field(default_factory=set)
+    # PID counts folded in when merging per-day aggregates (see ProcAgg).
+    extra_pids: int = 0
+
+    @property
+    def pid_count(self) -> int:
+        """Distinct PIDs seen, including those merged from other day windows."""
+        return len(self.pid_set) + self.extra_pids
 
     @property
     def gpu_seconds(self) -> float:
@@ -190,3 +206,7 @@ class _Window:
     distinct_samples: int = 0
     interval_s: int = 0
     seconds: int = 0
+    # Raw epoch bounds, kept so multiple per-day windows can be merged by
+    # min(start)/max(end) without re-parsing the ISO strings above.
+    start_epoch: int = 0
+    end_epoch: int = 0
