@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
-"""End-of-day resource usage report from atop + nvidia-smi pmon logs.
+"""Resource usage report from atop + nvidia-smi pmon logs.
 
-Parses the current-day (or given) `atop` binary log via `atop -P PRC,PRM -r`
-and the per-process nvidia-smi pmon log, aggregates CPU seconds, peak/average
-RSS, and GPU SM-% seconds per program, and prints a compact Markdown report
-intended to be pasted into an LLM (Claude / Copilot) for further analysis.
+Parses one or more daily `atop` binary logs via `atop -P PRC,PRM -r` and the
+per-process nvidia-smi pmon logs, aggregates CPU seconds, peak/average RSS, and
+GPU SM-% seconds per program, and prints a compact Markdown report intended to
+be pasted into an LLM (Claude / Copilot) for further analysis.
 
-Run with no arguments to report on today's logs:
+Run with no arguments to report on **everything since the last report**: the
+previous run's timestamp is persisted, and each run covers the whole window
+from then until now, spanning as many daily logs as needed (so skipped days are
+never lost). After a successful report the timestamp is advanced to "now".
 
-    usage_report.py                       # today
-    usage_report.py --date 20260419       # specific day
+    usage_report.py                       # since the last report (multi-day)
+    usage_report.py --since 20260419      # ad hoc: from a date to now, no state
+    usage_report.py --date 20260419       # one specific day (ad hoc, no state)
     usage_report.py --top 20              # keep 20 rows per table
+    usage_report.py --no-update-state     # don't advance the saved timestamp
     usage_report.py > report.md           # redirect to a file
 
-The output intentionally front-loads metadata (hostname, window, sample
+The output intentionally front-loads metadata (hostname, period, window, sample
 count, HZ, machine specs) so the LLM never has to guess context.
 """
 
@@ -21,7 +26,9 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from dataclasses import dataclass
 import datetime as _dt
+import json
 import os
 from pathlib import Path
 import platform
@@ -34,7 +41,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-from _usage_report_parsing import _run, aggregate_atop, aggregate_pmon
+from _usage_report_parsing import (
+    _run,
+    aggregate_atop,
+    aggregate_pmon,
+    merge_gpu_aggs,
+    merge_proc_aggs,
+    merge_windows,
+)
 from _usage_report_types import (
     _HZ,
     _PMON_INTERVAL_S,
@@ -51,6 +65,12 @@ _PAGE_KB = os.sysconf("SC_PAGESIZE") // 1024 if hasattr(os, "sysconf") else 4
 _SEC_PER_DAY = 86_400
 _SEC_PER_HOUR = 3600
 _SEC_PER_MIN = 60
+
+# Persisted marker of when the last report was generated. Lives under
+# ~/.local/share (durable app state), not ~/.cache, so clearing caches does not
+# silently reset the "since last report" window back to today-only.
+_STATE_DIR = Path.home() / ".local/share/usage_report"
+_STATE_FILE = _STATE_DIR / "last_report.json"
 
 
 def _host_profile() -> dict[str, str]:
@@ -127,7 +147,7 @@ def _cpu_table(aggs: Iterable[ProcAgg], window_s: int, top: int) -> list[str]:
             f"{idx} | {_md_escape(item.name)} | "
             f"{item.cpu_seconds:,.0f}s ({_fmt_h(item.cpu_seconds)}) | "
             f"{single:.1f}% | {box:.1f}% | "
-            f"{item.peak_rss_mb:,.0f} MiB | {len(item.pid_set)} |",
+            f"{item.peak_rss_mb:,.0f} MiB | {item.pid_count} |",
         )
     return rows
 
@@ -151,7 +171,7 @@ def _dedupe_ram(aggs: Iterable[ProcAgg]) -> list[tuple[ProcAgg, list[str]]]:
         buckets[key].append(item)
     result: list[tuple[ProcAgg, list[str]]] = []
     for bucket in buckets.values():
-        bucket.sort(key=lambda a: (a.cpu_ticks, len(a.pid_set)), reverse=True)
+        bucket.sort(key=lambda a: (a.cpu_ticks, a.pid_count), reverse=True)
         rep = bucket[0]
         siblings = [b.name for b in bucket[1:]]
         result.append((rep, siblings))
@@ -186,7 +206,7 @@ def _ram_table(aggs: Iterable[ProcAgg], top: int) -> list[str]:
             f"{item.peak_rss_mb:,.0f} MiB | "
             f"{item.avg_rss_mb:,.0f} MiB | "
             f"{item.cpu_seconds:,.0f}s | "
-            f"{len(item.pid_set)} | {sib} |",
+            f"{item.pid_count} | {sib} |",
         )
     return rows
 
@@ -212,7 +232,7 @@ def _gpu_table(aggs: dict[str, GpuAgg], total_samples: int, top: int) -> list[st
             f"{item.peak_sm_pct:.0f}% | "
             f"{item.peak_mem_pct:.0f}% | "
             f"{item.samples} ({presence:.0f}%) | "
-            f"{len(item.pid_set)} |",
+            f"{item.pid_count} |",
         )
     return rows
 
@@ -227,11 +247,15 @@ def _fingerprint_section() -> list[str]:
     ]
 
 
-def _methodology_section(atop_log: Path, pmon_log: Path, window: _Window) -> list[str]:
+def _methodology_section(
+    atop_desc: str,
+    pmon_desc: str,
+    window: _Window,
+) -> list[str]:
     window_note = (
         f"- **Coverage window**: {_fmt_h(window.seconds)} "
-        f"(from first to last atop sample; window may be shorter than wall "
-        f"clock since the next atop tick has not yet fired)."
+        f"(sum of per-day atop coverage from first to last sample; excludes "
+        f"any gap days where atop was not logging, and the final partial tick)."
     )
     interval_note = (
         f"- **atop sample interval (observed)**: {window.interval_s}s"
@@ -266,8 +290,8 @@ def _methodology_section(atop_log: Path, pmon_log: Path, window: _Window) -> lis
     return [
         "## Methodology",
         "",
-        f"- **atop log**: `{atop_log}` (binary, replay with `atop -r`)",
-        f"- **pmon log**: `{pmon_log}` (`nvidia-smi pmon -d {_PMON_INTERVAL_S}`)",
+        f"- **atop log(s)**: {atop_desc}",
+        f"- **pmon log(s)**: {pmon_desc}",
         f"- **HZ**: {_HZ} ticks/s; **page size**: {_PAGE_KB} KiB",
         window_note,
         interval_note,
@@ -293,34 +317,60 @@ def _compute_window(atop_log: Path, progress: _Progress) -> _Window:
 
 
 _LLM_PROMPT = [
-    "> Below is a day's worth of aggregated resource usage for my Linux workstation.",
-    "> Identify which programs are the biggest hogs, flag anything that looks abnormal",
-    "> for a typical developer/gaming setup, and suggest concrete optimisations",
-    "> (config tweaks, process limits, alternative tools). Be specific.",
+    "> Below is aggregated resource usage for my Linux workstation over the",
+    "> reporting period shown above. Identify which programs are the biggest",
+    "> hogs, flag anything that looks abnormal for a typical developer/gaming",
+    "> setup, and suggest concrete optimisations (config tweaks, process limits,",
+    "> alternative tools). Be specific.",
 ]
 
 
 _REPORT_STAGES = 2
 
 
-def _build_report(
-    args: argparse.Namespace,
-    atop_log: Path,
-    pmon_log: Path,
-) -> str:
-    progress = _Progress(
-        enabled=not args.quiet,
-        total_stages=_REPORT_STAGES,
-    )
-    cpu_aggs, window = aggregate_atop(atop_log, progress)
-    if not window.seconds:
-        window.seconds = _SEC_PER_DAY
-    gpu_aggs, gpu_samples = aggregate_pmon(pmon_log, progress)
-    progress.finish()
+@dataclass
+class _Segment:
+    """One calendar day's resolved logs plus optional in-day start bounds.
 
+    *atop_begin* is an atop ``-b`` argument (``YYYYMMDDhhmmss``) and
+    *pmon_begin_epoch* the matching local epoch; both are set only for the first
+    day of a "since last report" window so re-runs do not double-count.
+    """
+
+    atop_log: Path
+    pmon_log: Path
+    atop_begin: str | None = None
+    pmon_begin_epoch: float | None = None
+
+
+@dataclass
+class _Aggregates:
+    """Merged CPU/GPU aggregates and coverage window for a reporting window.
+
+    *days_with_data* is the number of daily logs that actually yielded atop
+    samples (gap days where the machine was off contribute nothing).
+    """
+
+    cpu: dict[str, ProcAgg]
+    gpu: dict[str, GpuAgg]
+    window: _Window
+    gpu_samples: int
+    days_with_data: int
+
+
+def _render_report(
+    aggs: _Aggregates,
+    *,
+    top: int,
+    atop_desc: str,
+    pmon_desc: str,
+    period_line: str,
+) -> str:
+    """Assemble the Markdown report from already-aggregated data."""
+    window = aggs.window
     gpu_section = (
-        _gpu_table(gpu_aggs, gpu_samples, args.top)
-        if gpu_aggs
+        _gpu_table(aggs.gpu, aggs.gpu_samples, top)
+        if aggs.gpu
         else ["_No GPU pmon data found._"]
     )
     generated = _dt.datetime.now().astimezone().isoformat(timespec="seconds")
@@ -329,20 +379,21 @@ def _build_report(
         "# System resource usage report",
         "",
         f"- **Generated**: {generated}",
+        period_line,
         f"- **atop window**: {window.start} \u2192 {window.end}",
         f"- **atop samples**: {window.distinct_samples} distinct "
         f"timestamps (sample interval \u2248 {interval})",
-        f"- **GPU pmon samples**: {gpu_samples} (\u2248{_PMON_INTERVAL_S}s each)",
+        f"- **GPU pmon samples**: {aggs.gpu_samples} (\u2248{_PMON_INTERVAL_S}s each)",
         "",
         *_fingerprint_section(),
-        *_methodology_section(atop_log, pmon_log, window),
+        *_methodology_section(atop_desc, pmon_desc, window),
         "## Top CPU consumers",
         "",
-        *_cpu_table(cpu_aggs.values(), window.seconds, args.top),
+        *_cpu_table(aggs.cpu.values(), window.seconds, top),
         "",
         "## Top RAM consumers (by peak RSS, deduped by shared-memory bucket)",
         "",
-        *_ram_table(cpu_aggs.values(), args.top),
+        *_ram_table(aggs.cpu.values(), top),
         "",
         "## Top GPU consumers",
         "",
@@ -356,10 +407,115 @@ def _build_report(
     return "\n".join(lines) + "\n"
 
 
+def _aggregate_segments(
+    segments: list[_Segment],
+    progress: _Progress,
+) -> _Aggregates:
+    """Aggregate and merge every existing daily log in *segments*.
+
+    Missing daily logs (gap days) are skipped silently.
+    """
+    cpu_total: dict[str, ProcAgg] = {}
+    gpu_total: dict[str, GpuAgg] = {}
+    windows: list[_Window] = []
+    gpu_samples = 0
+    days_with_data = 0
+    for seg in segments:
+        if seg.atop_log.exists():
+            cpu, window = aggregate_atop(seg.atop_log, progress, seg.atop_begin)
+            merge_proc_aggs(cpu_total, cpu)
+            if window.distinct_samples:
+                windows.append(window)
+                days_with_data += 1
+        gpu, samples = aggregate_pmon(seg.pmon_log, progress, seg.pmon_begin_epoch)
+        merge_gpu_aggs(gpu_total, gpu)
+        gpu_samples += samples
+    return _Aggregates(
+        cpu_total,
+        gpu_total,
+        merge_windows(windows),
+        gpu_samples,
+        days_with_data,
+    )
+
+
+def _describe_logs(paths: list[Path], how: str) -> str:
+    """One-line Markdown description of the log files actually consumed."""
+    if not paths:
+        return f"_none found_ (`{how}`)"
+    if len(paths) == 1:
+        return f"`{paths[0]}` (`{how}`)"
+    return (
+        f"{len(paths)} daily logs `{paths[0].name}` \u2026 `{paths[-1].name}` "
+        f"in `{paths[0].parent}` (`{how}`)"
+    )
+
+
+def _log_descriptions(segments: list[_Segment]) -> tuple[str, str]:
+    """Return ``(atop_desc, pmon_desc)`` for the logs present in *segments*."""
+    atop_present = [seg.atop_log for seg in segments if seg.atop_log.exists()]
+    pmon_present = [seg.pmon_log for seg in segments if seg.pmon_log.exists()]
+    return (
+        _describe_logs(atop_present, "atop -r"),
+        _describe_logs(pmon_present, f"nvidia-smi pmon -d {_PMON_INTERVAL_S}"),
+    )
+
+
 def _resolve_logs(date: str) -> tuple[Path, Path]:
     atop_log = _ATOP_LOG_DIR / f"atop_{date}"
     pmon_log = _PMON_LOG_DIR / f"pmon-{date}.log"
     return atop_log, pmon_log
+
+
+def _read_last_generated() -> _dt.datetime | None:
+    """Return the timestamp of the previous report run, or None if unknown."""
+    try:
+        raw = _STATE_FILE.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        stamp = json.loads(raw)["last_generated"]
+        return _dt.datetime.fromisoformat(stamp).astimezone()
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def _write_last_generated(when: _dt.datetime) -> None:
+    """Persist *when* as the last-report timestamp for the next run."""
+    _STATE_DIR.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps({"last_generated": when.isoformat(timespec="seconds")})
+    _STATE_FILE.write_text(payload + "\n", encoding="utf-8")
+
+
+def _has_time_of_day(when: _dt.datetime) -> bool:
+    """True when *when* is past local midnight, so a begin bound is needed."""
+    return bool(when.hour or when.minute or when.second or when.microsecond)
+
+
+def _plan_segments(start: _dt.datetime, end: _dt.datetime) -> list[_Segment]:
+    """Resolve one `_Segment` per calendar day across ``[start, end]``.
+
+    The first day is bounded at *start*'s time-of-day so a same-day re-run only
+    covers the slice since the previous report; later days are covered in full.
+    Returns an empty list when *start* is after *end* (e.g. a future state file).
+    """
+    segments: list[_Segment] = []
+    day = start.date()
+    while day <= end.date():
+        atop_log, pmon_log = _resolve_logs(day.strftime("%Y%m%d"))
+        if day == start.date() and _has_time_of_day(start):
+            segments.append(
+                _Segment(
+                    atop_log,
+                    pmon_log,
+                    start.strftime("%Y%m%d%H%M%S"),
+                    start.timestamp(),
+                ),
+            )
+        else:
+            segments.append(_Segment(atop_log, pmon_log))
+        day += _dt.timedelta(days=1)
+    return segments
 
 
 _INSTALL_SCRIPT = Path(__file__).with_name("install_usage_monitoring.sh")
@@ -406,13 +562,126 @@ def _copy_to_clipboard(text: str) -> None:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Entry point; see module docstring for CLI."""
+def _emit(args: argparse.Namespace, report: str) -> None:
+    """Write the report to stdout and (unless suppressed) the clipboard."""
+    sys.stdout.write(report)
+    if not args.no_clipboard:
+        _copy_to_clipboard(report)
+
+
+def _period_line(start: _dt.datetime, end: _dt.datetime) -> str:
+    """Markdown bullet describing the requested reporting period."""
+    span = _fmt_h(max((end - start).total_seconds(), 0.0))
+    return (
+        f"- **Reporting period**: {start.isoformat(timespec='seconds')} → "
+        f"{end.isoformat(timespec='seconds')} ({span})"
+    )
+
+
+def _is_single_day_mode(args: argparse.Namespace) -> bool:
+    """True when the user pinned an exact day or explicit log paths."""
+    return (
+        args.date is not None or args.atop_log is not None or args.pmon_log is not None
+    )
+
+
+def _should_advance_state(args: argparse.Namespace) -> bool:
+    """Advance the saved timestamp only for genuine since-last-report runs.
+
+    An explicit ``--since`` is treated as a read-only ad-hoc query (like
+    ``--date``) so "let me look from date X" never silently re-baselines the
+    saved tracking point.
+    """
+    return args.since is None and not args.no_update_state
+
+
+def _run_single_day(args: argparse.Namespace, now: _dt.datetime) -> int:
+    """Report on one specific day (legacy behaviour); never touches state."""
+    date = args.date or now.strftime("%Y%m%d")
+    atop_default, pmon_default = _resolve_logs(date)
+    atop_log = args.atop_log or atop_default
+    pmon_log = args.pmon_log or pmon_default
+    _preflight(atop_log)
+    segment = _Segment(atop_log, pmon_log)
+    progress = _Progress(enabled=not args.quiet, total_stages=_REPORT_STAGES)
+    aggs = _aggregate_segments([segment], progress)
+    progress.finish()
+    if not aggs.window.seconds:
+        aggs.window.seconds = _SEC_PER_DAY
+    atop_desc, pmon_desc = _log_descriptions([segment])
+    _emit(
+        args,
+        _render_report(
+            aggs,
+            top=args.top,
+            atop_desc=atop_desc,
+            pmon_desc=pmon_desc,
+            period_line=f"- **Reporting period**: {date} (single day)",
+        ),
+    )
+    return 0
+
+
+def _resolve_start(args: argparse.Namespace, now: _dt.datetime) -> _dt.datetime:
+    """Pick the window start: --since, else last report, else today midnight."""
+    if args.since is not None:
+        return _dt.datetime.strptime(args.since, "%Y%m%d").astimezone()
+    last = _read_last_generated()
+    if last is not None:
+        return last
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _run_since(args: argparse.Namespace, now: _dt.datetime) -> int:
+    """Report on everything since the last run, spanning multiple daily logs."""
+    if not shutil.which("atop"):
+        sys.exit(f"error: `atop` is not installed.\nrun: {_INSTALL_SCRIPT}")
+    start = _resolve_start(args, now)
+    segments = _plan_segments(start, now)
+    progress = _Progress(
+        enabled=not args.quiet,
+        total_stages=max(2 * len(segments), 1),
+    )
+    aggs = _aggregate_segments(segments, progress)
+    progress.finish()
+    if aggs.days_with_data == 0:
+        sys.stderr.write(
+            f"no atop logs with data for {start.date()} … {now.date()}; "
+            "nothing to report.\n",
+        )
+        if _should_advance_state(args):
+            _write_last_generated(now)
+        return 0
+    if not aggs.window.seconds:
+        aggs.window.seconds = _SEC_PER_DAY
+    atop_desc, pmon_desc = _log_descriptions(segments)
+    _emit(
+        args,
+        _render_report(
+            aggs,
+            top=args.top,
+            atop_desc=atop_desc,
+            pmon_desc=pmon_desc,
+            period_line=_period_line(start, now),
+        ),
+    )
+    if _should_advance_state(args):
+        _write_last_generated(now)
+    return 0
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Construct the command-line argument parser."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--date",
-        default=_dt.datetime.now().astimezone().strftime("%Y%m%d"),
-        help="YYYYMMDD to report on (default: today)",
+        default=None,
+        help="report on one specific day (YYYYMMDD); ad hoc, ignores state",
+    )
+    parser.add_argument(
+        "--since",
+        default=None,
+        help="ad-hoc: report from this date (YYYYMMDD) to now; leaves state",
     )
     parser.add_argument(
         "--top",
@@ -424,13 +693,13 @@ def main(argv: list[str] | None = None) -> int:
         "--atop-log",
         type=Path,
         default=None,
-        help="override atop log path",
+        help="override atop log path (implies single-day mode)",
     )
     parser.add_argument(
         "--pmon-log",
         type=Path,
         default=None,
-        help="override pmon log path",
+        help="override pmon log path (implies single-day mode)",
     )
     parser.add_argument(
         "--no-clipboard",
@@ -438,21 +707,25 @@ def main(argv: list[str] | None = None) -> int:
         help="skip copying the report to the X clipboard",
     )
     parser.add_argument(
+        "--no-update-state",
+        action="store_true",
+        help="do not advance the saved last-report timestamp",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="suppress the progress line on stderr",
     )
-    args = parser.parse_args(argv)
+    return parser
 
-    atop_default, pmon_default = _resolve_logs(args.date)
-    atop_log = args.atop_log or atop_default
-    pmon_log = args.pmon_log or pmon_default
-    _preflight(atop_log)
-    report = _build_report(args, atop_log, pmon_log)
-    sys.stdout.write(report)
-    if not args.no_clipboard:
-        _copy_to_clipboard(report)
-    return 0
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point; see module docstring for CLI."""
+    args = _build_parser().parse_args(argv)
+    now = _dt.datetime.now().astimezone()
+    if _is_single_day_mode(args):
+        return _run_single_day(args, now)
+    return _run_since(args, now)
 
 
 if __name__ == "__main__":
