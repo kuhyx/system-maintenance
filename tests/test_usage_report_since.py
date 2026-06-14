@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import _usage_report_parsing as parsing
+import _usage_report_pmon as pmon
 from _usage_report_types import GpuAgg, ProcAgg, _PidCpu, _Progress, _Window
 import usage_report
 
@@ -177,13 +178,13 @@ def test_pmon_row_epoch_parses_valid_row() -> None:
     """A well-formed pmon row yields the matching local epoch."""
     row = ["20260604", "10:30:00", "0", "100", "G", "5", "1"]
 
-    assert parsing._pmon_row_epoch(row) == _at(2026, 6, 4, 10, 30).timestamp()
+    assert pmon._pmon_row_epoch(row) == _at(2026, 6, 4, 10, 30).timestamp()
 
 
 def test_pmon_row_epoch_returns_none_on_bad_input() -> None:
     """Malformed or short rows return None rather than raising."""
-    assert parsing._pmon_row_epoch([]) is None
-    assert parsing._pmon_row_epoch(["nope", "alsonope"]) is None
+    assert pmon._pmon_row_epoch([]) is None
+    assert pmon._pmon_row_epoch(["nope", "alsonope"]) is None
 
 
 def _write_pmon(path: Path) -> None:
@@ -201,7 +202,7 @@ def test_aggregate_pmon_without_bound_keeps_all_rows(tmp_path: Path) -> None:
     log = tmp_path / "pmon.log"
     _write_pmon(log)
 
-    _, samples = parsing.aggregate_pmon(log, _Progress(enabled=False, total_stages=1))
+    _, samples = pmon.aggregate_pmon(log, _Progress(enabled=False, total_stages=1))
 
     assert samples == 2
 
@@ -212,7 +213,7 @@ def test_aggregate_pmon_filters_rows_before_begin(tmp_path: Path) -> None:
     _write_pmon(log)
     cutoff = _at(2026, 6, 4, 10, 30).timestamp()
 
-    agg, samples = parsing.aggregate_pmon(
+    agg, samples = pmon.aggregate_pmon(
         log,
         _Progress(enabled=False, total_stages=1),
         begin_epoch=cutoff,
