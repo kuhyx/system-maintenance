@@ -9,6 +9,7 @@ LOG_FILE="/var/log/periodic-system-maintenance.log"
 
 # Path placeholders replaced at install time
 PACMAN_WRAPPER_INSTALL="__PACMAN_WRAPPER_INSTALL__"
+MAKEPKG_WRAPPER_INSTALL="__MAKEPKG_WRAPPER_INSTALL__"
 HOSTS_INSTALL_SCRIPT="__HOSTS_INSTALL_SCRIPT__"
 
 # Function to log with timestamp
@@ -44,6 +45,7 @@ log_message "=== Periodic System Maintenance Started ==="
 
 # Install pacman wrapper
 execute_with_log "$PACMAN_WRAPPER_INSTALL" "Pacman Wrapper Installation"
+execute_with_log "$MAKEPKG_WRAPPER_INSTALL" "Makepkg Wrapper Installation"
 
 # Update hosts file
 execute_with_log "$HOSTS_INSTALL_SCRIPT" "Hosts File Update"
