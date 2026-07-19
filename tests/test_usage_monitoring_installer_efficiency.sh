@@ -26,9 +26,20 @@ printf 'Checking pmon logger template avoids read -t busy-loop pattern...\n'
 ! grep -q 'read -r -t' <<< "$logger_template" \
   || fail 'logger template must not use read -t as sleep surrogate'
 
-printf 'Checking pmon logger template uses sleep-based waiting...\n'
-grep -q 'sleep 60' <<< "$logger_template" \
-  || fail 'logger template must sleep between day rollover checks'
+# The template used to poll with `sleep 60` until the day changed. It now
+# sleeps exactly once, until the next midnight, and blocks on `wait` for the
+# pmon child — strictly fewer wakeups. Assert that property rather than the
+# old literal, so an accidental return to polling still fails the test.
+printf 'Checking pmon logger template sleeps until rollover rather than polling...\n'
+grep -q 'sleep "\$(seconds_until_next_day)"' <<< "$logger_template" \
+  || fail 'logger template must sleep until the next day boundary'
+
+grep -q 'seconds_until_next_day()' <<< "$logger_template" \
+  || fail 'logger template must define seconds_until_next_day'
+
+printf 'Checking pmon logger template blocks on wait instead of spinning...\n'
+grep -qE '^\s*wait "\$pmon_pid"' <<< "$logger_template" \
+  || fail 'logger template must block on wait for the pmon child'
 
 printf 'Checking pmon logger template uses fork-free date builtin...\n'
 grep -q "printf '%(%Y%m%d)T' -1" <<< "$logger_template" \
