@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
-TARGET_SCRIPT="$REPO_DIR/scripts/system-maintenance/bin/hosts-file-monitor.sh"
+TARGET_SCRIPT="$REPO_DIR/scripts/periodic_background/system-maintenance/bin/hosts-file-monitor.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2

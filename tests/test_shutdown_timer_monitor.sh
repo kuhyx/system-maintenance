@@ -5,8 +5,8 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
-TARGET_SCRIPT="$REPO_DIR/scripts/system-maintenance/bin/shutdown-timer-monitor.sh"
-SETUP_SCRIPT="$REPO_DIR/scripts/digital_wellbeing/setup_midnight_shutdown.sh"
+TARGET_SCRIPT="$REPO_DIR/scripts/periodic_background/system-maintenance/bin/shutdown-timer-monitor.sh"
+SETUP_SCRIPT="$REPO_DIR/scripts/periodic_background/digital_wellbeing/setup_midnight_shutdown.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
