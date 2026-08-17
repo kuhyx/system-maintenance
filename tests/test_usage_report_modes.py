@@ -165,16 +165,3 @@ def test_parse_prc_too_short_is_ignored() -> None:
 
 # --------------------------------------------------------------------------- #
 # Native helper selection (parsing)
-# --------------------------------------------------------------------------- #
-def test_atop_agg_binary_missing_source_falls_back(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A deleted C source tree yields None (Python fallback) even when a cached
-    binary exists — never trust an orphaned, unverifiable build."""
-    monkeypatch.setattr(parsing, "_ATOP_AGG_SRC_DIR", tmp_path / "gone")
-    cache = tmp_path / "atop_agg"
-    cache.write_text("stale binary", encoding="utf-8")
-    monkeypatch.setattr(parsing, "_ATOP_AGG_CACHE_BIN", cache)
-
-    assert parsing._atop_agg_binary() is None

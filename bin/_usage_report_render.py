@@ -9,8 +9,8 @@ import platform
 import re
 from typing import TYPE_CHECKING
 
+from _usage_report_atop import _run
 from _usage_report_format import _fmt_h
-from _usage_report_parsing import _run
 from _usage_report_tables import _cpu_table, _gpu_table, _ram_table
 from _usage_report_types import _HZ, _PMON_INTERVAL_S, _Window
 

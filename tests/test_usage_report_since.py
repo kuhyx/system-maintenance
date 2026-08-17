@@ -9,7 +9,7 @@ import datetime as _dt
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import _usage_report_parsing as parsing
+import _usage_report_atop as atop_io
 import _usage_report_pmon as pmon
 from _usage_report_types import _Progress
 import usage_report
@@ -88,7 +88,7 @@ def test_aggregate_pmon_filters_rows_before_begin(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 def test_atop_read_cmd_unbounded() -> None:
     """Without bounds the command is a plain replay."""
-    cmd = parsing._atop_read_cmd(
+    cmd = atop_io._atop_read_cmd(
         Path("/var/log/atop/atop_20260604"), "PRC,PRM", None, None
     )
 
@@ -97,7 +97,7 @@ def test_atop_read_cmd_unbounded() -> None:
 
 def test_atop_read_cmd_with_begin_and_end() -> None:
     """Begin/end inject -b/-e before the -P selector."""
-    cmd = parsing._atop_read_cmd(Path("/x"), "PRC", "202606041400", "202606042000")
+    cmd = atop_io._atop_read_cmd(Path("/x"), "PRC", "202606041400", "202606042000")
 
     assert cmd == [
         "atop",
