@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
-INSTALLER="$REPO_DIR/scripts/periodic_background/system-maintenance/bin/install_usage_monitoring.sh"
+INSTALLER="$REPO_DIR/scripts/periodic_background/system-maintenance/bin/lib/nvidia_pmon.sh"
 
 fail() {
 	printf 'FAIL: %s\n' "$1" >&2
@@ -14,7 +14,7 @@ fail() {
 
 logger_template=$(
 	awk '
-    /cat > "\$HOME\/.local\/bin\/nvidia-pmon-logger\.sh" << '\''SCRIPT'\''/ {capture=1; next}
+    /cat >[[:space:]]*"\$HOME\/.local\/bin\/nvidia-pmon-logger\.sh"[[:space:]]*<<[[:space:]]*'\''SCRIPT'\''/ {capture=1; next}
     capture && /^SCRIPT$/ {capture=0; exit}
     capture {print}
   ' "$INSTALLER"
