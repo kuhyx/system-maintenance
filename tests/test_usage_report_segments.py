@@ -1,51 +1,23 @@
-"""Tests for usage_report's per-day segment aggregation, the log-description
-strings, and the deprecated _compute_window shim.
+"""Tests for usage_report's per-day segment aggregation and the
+log-description strings.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import _usage_report_run as run
 from _usage_report_types import _Progress, _Window
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     import pytest
 
 
 def _progress() -> _Progress:
     """A progress reporter that never draws, so stderr stays clean."""
     return _Progress(enabled=False, total_stages=1)
-
-
-# --------------------------------------------------------------------------- #
-# _compute_window (deprecated shim; no callers remain in-tree)
-# --------------------------------------------------------------------------- #
-def test_compute_window_returns_the_aggregate_window(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The shim forwards to aggregate_atop and hands back its window."""
-    window = _Window(distinct_samples=3, interval_s=600, seconds=1200)
-    monkeypatch.setattr(run, "aggregate_atop", lambda *_a: ({}, window))
-
-    result = run._compute_window(Path("/nonexistent/atop"), _progress())
-
-    assert result is window
-    assert result.seconds == 1200
-
-
-def test_compute_window_defaults_an_empty_window_to_a_day(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A window with no measured seconds is widened to a full day."""
-    window = _Window(distinct_samples=1)
-    monkeypatch.setattr(run, "aggregate_atop", lambda *_a: ({}, window))
-
-    assert (
-        run._compute_window(Path("/nonexistent/atop"), _progress()).seconds
-        == run._SEC_PER_DAY
-    )
 
 
 # --------------------------------------------------------------------------- #

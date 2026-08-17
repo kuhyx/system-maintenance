@@ -36,19 +36,6 @@ _SEC_PER_DAY = 86_400
 
 if TYPE_CHECKING:
     import argparse
-    from pathlib import Path
-
-
-def _compute_window(atop_log: Path, progress: _Progress) -> _Window:
-    """Deprecated helper kept for backwards import compatibility.
-
-    New code should call :func:`aggregate_atop`, which returns the window
-    alongside the per-process aggregates from a single atop subprocess.
-    """
-    _, window = aggregate_atop(atop_log, progress)
-    if not window.seconds:
-        window.seconds = _SEC_PER_DAY
-    return window
 
 
 _REPORT_STAGES = 2
