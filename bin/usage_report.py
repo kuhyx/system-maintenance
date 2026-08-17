@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import sys
 
+from _usage_report_format import _fmt_h
 from _usage_report_parsing import (
     aggregate_atop,
     merge_gpu_aggs,
@@ -40,7 +41,7 @@ from _usage_report_parsing import (
     merge_windows,
 )
 from _usage_report_pmon import aggregate_pmon
-from _usage_report_render import _fmt_h, _render_report
+from _usage_report_render import _render_report
 from _usage_report_types import _PMON_INTERVAL_S, GpuAgg, ProcAgg, _Progress, _Window
 
 _ATOP_LOG_DIR = Path("/var/log/atop")
