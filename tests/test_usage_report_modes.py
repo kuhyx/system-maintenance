@@ -10,7 +10,9 @@ import datetime as _dt
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import _usage_report_logs as logs
 import _usage_report_parsing as parsing
+import _usage_report_run as run
 import usage_report
 
 if TYPE_CHECKING:
@@ -47,8 +49,8 @@ def _args(**overrides: object) -> argparse.Namespace:
 
 def test_resolve_start_prefers_since(monkeypatch: pytest.MonkeyPatch) -> None:
     """--since wins over any saved state and starts at local midnight."""
-    monkeypatch.setattr(usage_report, "_read_last_generated", lambda: _at(2026, 1, 1))
-    start = usage_report._resolve_start(_args(since="20260604"), _at(2026, 6, 4, 12))
+    monkeypatch.setattr(run, "_read_last_generated", lambda: _at(2026, 1, 1))
+    start = run._resolve_start(_args(since="20260604"), _at(2026, 6, 4, 12))
 
     assert start.date() == _dt.date(2026, 6, 4)
     assert (start.hour, start.minute) == (0, 0)
@@ -57,19 +59,19 @@ def test_resolve_start_prefers_since(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_resolve_start_uses_last_report(monkeypatch: pytest.MonkeyPatch) -> None:
     """Without --since, the saved last-report timestamp is the start."""
     last = _at(2026, 6, 2, 9, 0)
-    monkeypatch.setattr(usage_report, "_read_last_generated", lambda: last)
+    monkeypatch.setattr(run, "_read_last_generated", lambda: last)
 
-    assert usage_report._resolve_start(_args(), _at(2026, 6, 4, 12)) == last
+    assert run._resolve_start(_args(), _at(2026, 6, 4, 12)) == last
 
 
 def test_resolve_start_first_run_is_today_midnight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """First-ever run (no state) covers today from local midnight."""
-    monkeypatch.setattr(usage_report, "_read_last_generated", lambda: None)
+    monkeypatch.setattr(run, "_read_last_generated", lambda: None)
     now = _at(2026, 6, 4, 12, 30)
 
-    assert usage_report._resolve_start(_args(), now) == _at(2026, 6, 4, 0, 0)
+    assert run._resolve_start(_args(), now) == _at(2026, 6, 4, 0, 0)
 
 
 def test_is_single_day_mode() -> None:
@@ -82,11 +84,11 @@ def test_is_single_day_mode() -> None:
 
 def test_should_advance_state_only_for_default_run() -> None:
     """Only a plain since-last-report run re-baselines the saved timestamp."""
-    assert usage_report._should_advance_state(_args(no_update_state=False)) is True
-    assert usage_report._should_advance_state(_args(no_update_state=True)) is False
+    assert run._should_advance_state(_args(no_update_state=False)) is True
+    assert run._should_advance_state(_args(no_update_state=True)) is False
     # --since is an ad-hoc query and must never advance state.
     assert (
-        usage_report._should_advance_state(
+        run._should_advance_state(
             _args(since="20260510", no_update_state=False),
         )
         is False
@@ -98,7 +100,7 @@ def test_should_advance_state_only_for_default_run() -> None:
 # --------------------------------------------------------------------------- #
 def test_period_line_contains_both_bounds() -> None:
     """The period bullet shows start, end, and the span."""
-    line = usage_report._period_line(_at(2026, 6, 2, 9), _at(2026, 6, 4, 9))
+    line = run._period_line(_at(2026, 6, 2, 9), _at(2026, 6, 4, 9))
 
     assert "2026-06-02T09:00:00" in line
     assert "2026-06-04T09:00:00" in line
@@ -107,13 +109,13 @@ def test_period_line_contains_both_bounds() -> None:
 
 def test_describe_logs_counts() -> None:
     """Log description switches between none / single / multiple wording."""
-    assert "none found" in usage_report._describe_logs([], "atop -r")
-    assert usage_report._describe_logs(
+    assert "none found" in logs._describe_logs([], "atop -r")
+    assert logs._describe_logs(
         [Path("/var/log/atop/atop_20260604")], "atop -r"
     ).startswith(
         "`/var/log/atop/atop_20260604`",
     )
-    many = usage_report._describe_logs(
+    many = logs._describe_logs(
         [Path("/v/atop_20260601"), Path("/v/atop_20260604")],
         "atop -r",
     )

@@ -9,6 +9,7 @@ import datetime as _dt
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import _usage_report_run as run
 from _usage_report_types import _Progress, _Window
 import usage_report
 
@@ -33,7 +34,7 @@ def _args(**overrides: object) -> object:
 
 def _aggregates(*, days_with_data: int = 1, seconds: int = 600) -> object:
     """Build an _Aggregates with a window that looks like real coverage."""
-    return usage_report._Aggregates(
+    return run._Aggregates(
         cpu={},
         gpu={},
         window=_Window(distinct_samples=2, interval_s=600, seconds=seconds),
@@ -133,21 +134,19 @@ def test_main_routes_since_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 # --------------------------------------------------------------------------- #
 def test_run_single_day_emits_a_report(monkeypatch: pytest.MonkeyPatch) -> None:
     """The single-day path renders once and writes the result out."""
-    monkeypatch.setattr(usage_report, "_preflight", lambda _log: None)
+    monkeypatch.setattr(run, "_preflight", lambda _log: None)
     monkeypatch.setattr(
-        usage_report,
+        run,
         "_resolve_logs",
         lambda _date: (Path("/nonexistent/atop"), Path("/nonexistent/pmon")),
     )
-    monkeypatch.setattr(usage_report, "_aggregate_segments", lambda *_a: _aggregates())
-    monkeypatch.setattr(usage_report, "_log_descriptions", lambda _s: ("a", "p"))
-    monkeypatch.setattr(
-        usage_report, "_render_report", lambda *_a, **k: k["period_line"]
-    )
+    monkeypatch.setattr(run, "_aggregate_segments", lambda *_a: _aggregates())
+    monkeypatch.setattr(run, "_log_descriptions", lambda _s: ("a", "p"))
+    monkeypatch.setattr(run, "_render_report", lambda *_a, **k: k["period_line"])
     emitted: list[str] = []
-    monkeypatch.setattr(usage_report, "_emit", lambda _args, r: emitted.append(r))
+    monkeypatch.setattr(run, "_emit", lambda _args, r: emitted.append(r))
 
-    rc = usage_report._run_single_day(
+    rc = run._run_single_day(
         _args(date="20260817", quiet=True),
         _dt.datetime.now().astimezone(),
     )
@@ -161,20 +160,20 @@ def test_run_single_day_defaults_an_empty_window_to_a_day(
 ) -> None:
     """A window with no measured seconds is treated as a full day."""
     aggs = _aggregates(seconds=0)
-    monkeypatch.setattr(usage_report, "_preflight", lambda _log: None)
+    monkeypatch.setattr(run, "_preflight", lambda _log: None)
     monkeypatch.setattr(
-        usage_report,
+        run,
         "_resolve_logs",
         lambda _date: (Path("/nonexistent/atop"), Path("/nonexistent/pmon")),
     )
-    monkeypatch.setattr(usage_report, "_aggregate_segments", lambda *_a: aggs)
-    monkeypatch.setattr(usage_report, "_log_descriptions", lambda _s: ("a", "p"))
-    monkeypatch.setattr(usage_report, "_render_report", lambda *_a, **_k: "report")
-    monkeypatch.setattr(usage_report, "_emit", lambda *_a: None)
+    monkeypatch.setattr(run, "_aggregate_segments", lambda *_a: aggs)
+    monkeypatch.setattr(run, "_log_descriptions", lambda _s: ("a", "p"))
+    monkeypatch.setattr(run, "_render_report", lambda *_a, **_k: "report")
+    monkeypatch.setattr(run, "_emit", lambda *_a: None)
 
-    usage_report._run_single_day(
+    run._run_single_day(
         _args(date="20260817", quiet=True),
         _dt.datetime.now().astimezone(),
     )
 
-    assert aggs.window.seconds == usage_report._SEC_PER_DAY
+    assert aggs.window.seconds == run._SEC_PER_DAY

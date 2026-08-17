@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import _usage_report_atop as atop_io
+import _usage_report_logs as logs
 import _usage_report_pmon as pmon
 from _usage_report_types import _Progress
-import usage_report
 
 if TYPE_CHECKING:
     import pytest
@@ -121,13 +121,13 @@ def test_state_round_trip(
 ) -> None:
     """A written timestamp reads back as an equal aware datetime."""
     state = tmp_path / "state" / "last_report.json"
-    monkeypatch.setattr(usage_report, "_STATE_DIR", state.parent)
-    monkeypatch.setattr(usage_report, "_STATE_FILE", state)
+    monkeypatch.setattr(logs, "_STATE_DIR", state.parent)
+    monkeypatch.setattr(logs, "_STATE_FILE", state)
     when = _at(2026, 6, 2, 9, 0)
 
-    usage_report._write_last_generated(when)
+    logs._write_last_generated(when)
 
-    assert usage_report._read_last_generated() == when
+    assert logs._read_last_generated() == when
 
 
 def test_state_missing_file_returns_none(
@@ -135,9 +135,9 @@ def test_state_missing_file_returns_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No state file yet means "unknown", so the caller falls back to today."""
-    monkeypatch.setattr(usage_report, "_STATE_FILE", tmp_path / "absent.json")
+    monkeypatch.setattr(logs, "_STATE_FILE", tmp_path / "absent.json")
 
-    assert usage_report._read_last_generated() is None
+    assert logs._read_last_generated() is None
 
 
 def test_state_corrupt_file_returns_none(
@@ -147,11 +147,11 @@ def test_state_corrupt_file_returns_none(
     """Corrupt or partial JSON is treated as unknown, not a crash."""
     bad = tmp_path / "bad.json"
     bad.write_text("{ not json", encoding="utf-8")
-    monkeypatch.setattr(usage_report, "_STATE_FILE", bad)
-    assert usage_report._read_last_generated() is None
+    monkeypatch.setattr(logs, "_STATE_FILE", bad)
+    assert logs._read_last_generated() is None
 
     bad.write_text("{}", encoding="utf-8")  # valid JSON, missing key
-    assert usage_report._read_last_generated() is None
+    assert logs._read_last_generated() is None
 
 
 # --------------------------------------------------------------------------- #
@@ -159,13 +159,13 @@ def test_state_corrupt_file_returns_none(
 # --------------------------------------------------------------------------- #
 def test_has_time_of_day() -> None:
     """Midnight needs no begin bound; any later time does."""
-    assert usage_report._has_time_of_day(_at(2026, 6, 4, 14, 30)) is True
-    assert usage_report._has_time_of_day(_at(2026, 6, 4, 0, 0)) is False
+    assert logs._has_time_of_day(_at(2026, 6, 4, 14, 30)) is True
+    assert logs._has_time_of_day(_at(2026, 6, 4, 0, 0)) is False
 
 
 def test_plan_segments_single_day_midnight_unbounded() -> None:
     """A start at local midnight covers the whole first day (no -b bound)."""
-    segments = usage_report._plan_segments(_at(2026, 6, 4), _at(2026, 6, 4, 12))
+    segments = logs._plan_segments(_at(2026, 6, 4), _at(2026, 6, 4, 12))
 
     assert len(segments) == 1
     assert segments[0].atop_begin is None
@@ -175,7 +175,7 @@ def test_plan_segments_single_day_midnight_unbounded() -> None:
 def test_plan_segments_bounds_only_first_day() -> None:
     """A mid-day start bounds the first day only; later days are full."""
     start = _at(2026, 6, 2, 14, 0)
-    segments = usage_report._plan_segments(start, _at(2026, 6, 4, 10, 0))
+    segments = logs._plan_segments(start, _at(2026, 6, 4, 10, 0))
 
     assert len(segments) == 3
     assert segments[0].atop_begin == "20260602140000"
@@ -186,4 +186,4 @@ def test_plan_segments_bounds_only_first_day() -> None:
 
 def test_plan_segments_start_after_end_is_empty() -> None:
     """A future state file (start past end) yields no segments."""
-    assert usage_report._plan_segments(_at(2026, 6, 5), _at(2026, 6, 4)) == []
+    assert logs._plan_segments(_at(2026, 6, 5), _at(2026, 6, 4)) == []

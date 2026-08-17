@@ -7,8 +7,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import _usage_report_render as render
+from _usage_report_run import _Aggregates
 from _usage_report_types import GpuAgg, ProcAgg, _Window
-from usage_report import _Aggregates
 
 if TYPE_CHECKING:
     import pytest
