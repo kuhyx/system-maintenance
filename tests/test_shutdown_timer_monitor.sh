@@ -7,6 +7,13 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd -- "$SCRIPT_DIR/.." && pwd)
 TARGET_SCRIPT="$REPO_DIR/scripts/periodic_background/system-maintenance/bin/shutdown-timer-monitor.sh"
 SETUP_SCRIPT="$REPO_DIR/scripts/periodic_background/digital_wellbeing/setup_midnight_shutdown.sh"
+# The installer was split into lib/ms_*.sh under the 250-line cap, so these
+# template checks search the entry script AND its libs: the monitor template
+# now lives in lib/ms_monitor.sh, it did not disappear.
+SETUP_SOURCES=("$SETUP_SCRIPT")
+for _ms_lib in "$(dirname "$SETUP_SCRIPT")"/lib/ms_*.sh; do
+	[[ -f "$_ms_lib" ]] && SETUP_SOURCES+=("$_ms_lib")
+done
 
 fail() {
 	printf 'FAIL: %s\n' "$1" >&2
@@ -171,18 +178,18 @@ wait_elapsed=$(env -i PATH="/usr/bin:/bin" SHUTDOWN_TIMER_MONITOR_SKIP_MAIN=1 /b
 assert_equals '1' "$wait_elapsed" 'wait_seconds should not return immediately on /dev/null stdin'
 
 printf 'Checking installer template stays in sync with the event-driven monitor...\n'
-grep -Fq 'monitor_with_dbus()' "$SETUP_SCRIPT" ||
+grep -Fq 'monitor_with_dbus()' "${SETUP_SOURCES[@]}" ||
 	fail 'setup_midnight_shutdown.sh should install the D-Bus monitor helper'
-grep -Fq 'start_monitoring()' "$SETUP_SCRIPT" ||
+grep -Fq 'start_monitoring()' "${SETUP_SOURCES[@]}" ||
 	fail 'setup_midnight_shutdown.sh should install the start_monitoring dispatcher'
-grep -Fq 'if command -v busctl &>/dev/null; then' "$SETUP_SCRIPT" ||
+grep -Fq 'if command -v busctl &>/dev/null; then' "${SETUP_SOURCES[@]}" ||
 	fail 'setup_midnight_shutdown.sh should prefer busctl when available'
-grep -Fq 'current_epoch now_ts' "$SETUP_SCRIPT" ||
+grep -Fq 'current_epoch now_ts' "${SETUP_SOURCES[@]}" ||
 	fail 'setup_midnight_shutdown.sh should use out-var epoch helper in D-Bus throttling path'
 # Searching for this literal source text; expanding it would run
 # current_epoch and grep for its output instead.
 # shellcheck disable=SC2016
-if grep -Fq 'now_ts=$(current_epoch)' "$SETUP_SCRIPT"; then
+if grep -Fq 'now_ts=$(current_epoch)' "${SETUP_SOURCES[@]}"; then
 	fail 'setup_midnight_shutdown.sh should avoid subshell epoch capture in D-Bus path'
 fi
 # Literal source text, as above.
@@ -190,9 +197,9 @@ fi
 if grep -Fq 'now_ts=$(current_epoch)' "$TARGET_SCRIPT"; then
 	fail 'runtime shutdown monitor should avoid subshell epoch capture in D-Bus path'
 fi
-grep -Fq 'OnUnitActiveSec=300' "$SETUP_SCRIPT" ||
+grep -Fq 'OnUnitActiveSec=300' "${SETUP_SOURCES[@]}" ||
 	fail 'setup_midnight_shutdown.sh should run watchdog timer at 300s cadence'
-grep -Fq 'wait_seconds()' "$SETUP_SCRIPT" ||
+grep -Fq 'wait_seconds()' "${SETUP_SOURCES[@]}" ||
 	fail 'setup_midnight_shutdown.sh should install builtin wait helper in polling fallback'
 # Literal source text, as above.
 # shellcheck disable=SC2016
