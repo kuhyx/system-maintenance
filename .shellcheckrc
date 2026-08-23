@@ -1,0 +1,20 @@
+# Repo-wide shellcheck configuration.
+#
+# The pre-commit hook runs shellcheck with NO --severity filter, so every
+# finding shellcheck reports - including info- and style-level - fails the
+# commit. Previously the hook gated at --severity=warning, which silently
+# accepted 222 findings across 94 of 244 shell files.
+#
+# Follow `source`d files so SC1091 can be satisfied by pointing at the real
+# file rather than silenced. Where a script sources a path that only exists at
+# runtime (e.g. /usr/local/bin/pacman_lock_lib.sh, installed by its installer),
+# the call site carries an explicit `# shellcheck source=<repo path>` directive
+# naming the in-repo original, so the sourced code is genuinely checked.
+external-sources=true
+
+# Resolve `source` targets relative to the sourcing script's own directory.
+# Nearly every site here is `source "$SCRIPT_DIR/../../lib/common.sh"`, and
+# shellcheck cannot expand $SCRIPT_DIR - but with SCRIPTDIR on the search path a
+# `# shellcheck source=../../lib/common.sh` directive at the call site resolves
+# to the real file, so the sourced code is actually analysed instead of skipped.
+source-path=SCRIPTDIR

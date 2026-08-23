@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+# The tests import bin/'s modules by bare name; tests/conftest.py puts that
+# directory on sys.path.
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["bin"]
+
+[tool.coverage.report]
+show_missing = true

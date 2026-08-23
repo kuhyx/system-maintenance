@@ -1,0 +1,30 @@
+name: CI
+
+# In testsAndMisc the Python half ran under python-tests.yml (via a paths
+# filter naming this directory) and the shell half under shell-tests.yml's
+# glob. Neither follows the code out, so both halves are re-declared here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install pytest
+      - name: python tests
+        run: python -m pytest tests -q
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 shellcheck
+      - name: shell tests
+        run: |
+          for t in tests/*.sh; do echo "== $t"; bash "$t"; done
