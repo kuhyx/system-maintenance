@@ -1,0 +1,5 @@
+# system-maintenance runs on the stdlib alone; this file exists so the one
+# thing CI installs is exact-pinned and therefore checkable by the
+# dependency-freshness gate, rather than resolving to whatever pytest was
+# newest on the runner that day.
+pytest==9.1.1

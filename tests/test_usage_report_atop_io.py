@@ -7,11 +7,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import _usage_report_atop as parsing
 from _usage_report_types import ProcAgg, _Progress
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     import pytest

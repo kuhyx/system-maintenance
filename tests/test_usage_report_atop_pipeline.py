@@ -5,11 +5,10 @@ helper's TSV rows and copes with a producer or consumer that has no stdout.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 import _usage_report_atop as parsing
 from _usage_report_types import _Progress
-from typing_extensions import Self
 
 if TYPE_CHECKING:
     import pytest
