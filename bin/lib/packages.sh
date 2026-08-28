@@ -57,17 +57,17 @@ clipboard_pkg() {
 }
 
 # Resolves the global `pkgs` array (and `clip`) from FAMILY, then installs.
-# The trailing `|| true` guards the bare conditional from ending the function
-# with a false return value under `set -e`.
+# `if` rather than `A && B || true`: the latter reads as if-then-else but is
+# not one (SC2015), and shellcheck fails CI over it.
 resolve_and_install_packages() {
 	want_keys=(atop nvtop netdata)
 	pkgs=()
 	for key in "${want_keys[@]}"; do
 		p=$(pkg_name "$key")
-		[[ -n $p ]] && pkgs+=("$p")
+		if [[ -n $p ]]; then pkgs+=("$p"); fi
 	done
 	clip=$(clipboard_pkg)
-	[[ -n $clip ]] && pkgs+=("$clip") || true
+	if [[ -n $clip ]]; then pkgs+=("$clip"); fi
 
 	install_packages "${pkgs[@]}"
 }
