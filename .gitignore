@@ -44,7 +44,12 @@ htmlcov/
 *.mkv
 *.flac
 *.ogg
+*.wma
+*.aac
+*.m4a
 *.mov
+*.wmv
+*.flv
 *.zip
 *.tar
 *.gz
@@ -72,7 +77,9 @@ htmlcov/
 *.dll
 *.dylib
 *.class
+*.apkg
 *.bin
+*.flat
 *.db
 *.sqlite
 *.sqlite3
