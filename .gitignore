@@ -1,0 +1,78 @@
+# Nothing generated, compiled or binary belongs in this tree.
+#
+# The extraction from testsAndMisc carried the bytecode caches across as
+# tracked files, so every `python -m pytest tests` left 30 modified .pyc
+# blobs in `git status` and any wide `git add` swept them into a commit.
+# They are untracked as of the commit that adds this file.
+
+# ---------------------------------------------------------------------------
+# Python bytecode and test artefacts
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ---------------------------------------------------------------------------
+# Binary and media families. Same extension list the shared binary gate
+# blocks, so "git ignored it" and "the hook would have rejected it" cannot
+# disagree. A file a build genuinely cannot run without needs BOTH a `!`
+# override here and an entry in .binary-allowlist -- this repo is shell and
+# Python only and currently needs neither.
+# ---------------------------------------------------------------------------
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.ico
+*.bmp
+*.tiff
+*.tif
+*.psd
+*.mp3
+*.mp4
+*.wav
+*.avi
+*.mkv
+*.flac
+*.ogg
+*.mov
+*.zip
+*.tar
+*.gz
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.pdf
+*.doc
+*.docx
+*.xls
+*.xlsx
+*.ppt
+*.pptx
+*.ttf
+*.woff
+*.woff2
+*.eot
+*.otf
+*.o
+*.so
+*.a
+*.exe
+*.dll
+*.dylib
+*.class
+*.bin
+*.db
+*.sqlite
+*.sqlite3
