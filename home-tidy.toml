@@ -1,0 +1,484 @@
+# home-tidy manifest: what ~ is allowed to contain, where everything else
+# goes, and how the one-shot migration re-points what references it.
+#
+# Read by bin/home_tidy.py. Paths are relative to $HOME unless absolute.
+# Rationale and the research behind the layout:
+# ~/.claude/plans/ls-2142740-torrent-vast-moon.md (Bergman et al. 2010:
+# an extra folder level costs ~21x an extra item, so buckets are flat).
+
+[root]
+# The only visible entries ~ may hold. Everything else is swept to inbox/.
+allow = [
+  "src", "vendor", "services", "data", "media", "games", "sdk",
+  "archive", "inbox", "Downloads", "Documents",
+]
+# Buckets whose direct children must be git repositories.
+git_only = ["src", "vendor"]
+# Warn (never fail) when a bucket holds more than this many entries
+# (Bergman 2010 heuristic).
+warn_bucket_size = 21
+
+[sweep]
+# A root entry younger than this is left alone (something may still be
+# writing it).
+grace_minutes = 60
+# Refuse to sweep anything larger than this; report it instead.
+max_entry_bytes = 1073741824
+max_entry_count = 500
+# Inbox items older than this are nagged about at login. Never deleted.
+inbox_nag_days = 14
+# sweep runs as --dry-run until this many hours after the timer install.
+dry_run_hours_after_install = 24
+
+[bridges]
+# Symlinks left at old paths after the migration. Filled by `migrate
+# --apply`; empty means no bridges exist.
+expires = ""
+paths = []
+[xdg]
+# user-dirs.dirs values the migration writes. The bug being fixed: every
+# one of these pointed at "$HOME/", which is why Steam launchers and app
+# documents landed in ~ root.
+DESKTOP = "$HOME/inbox"
+DOWNLOAD = "$HOME/Downloads"
+DOCUMENTS = "$HOME/Documents"
+TEMPLATES = "$HOME/.local/share/templates"
+PUBLICSHARE = "$HOME/.local/share/public"
+MUSIC = "$HOME/media/music"
+PICTURES = "$HOME/media/pictures"
+VIDEOS = "$HOME/media/videos"
+
+[env]
+# Exports appended to ~/.zshenv (idempotent block) because these tools
+# find their trees by convention, not by any greppable config file.
+GOPATH = "$HOME/sdk/go"
+ANDROID_HOME = "$HOME/sdk/Android/Sdk"
+ANDROID_SDK_ROOT = "$HOME/sdk/Android/Sdk"
+FVM_CACHE_PATH = "$HOME/sdk/fvm"
+NLTK_DATA = "$HOME/data/nltk_data"
+
+[refs]
+# Text files under these roots (globs allowed) are rewritten (old -> new).
+# ~/.claude is listed piecewise: its histories, caches and transcripts are
+# not live references and must stay untouched.
+user_roots = [
+  "~/.config/systemd/user", "~/.local/bin", "~/.config/i3",
+  "~/.config/dufs", "~/.config/keepass-sync", "~/.config/VirtualBox",
+  "~/.config/toolport", "~/.config/flutter", "~/.config/autostart",
+  "~/.local/share/applications",
+  "~/.claude/CLAUDE.md", "~/.claude/settings.json", "~/.claude/settings.local.json",
+  "~/.claude/mcp-merge.json", "~/.claude/mcp-parked.json",
+  "~/.claude/memories", "~/.claude/rules", "~/.claude/skills", "~/.claude/hooks",
+  "~/.claude/scripts", "~/.claude/agents", "~/.claude/templates",
+  "~/.claude/mcp-optional", "~/.claude/disabled-units", "~/.claude/session-env",
+  "~/.claude/projects/*/memory",
+]
+user_files = ["~/.zshrc", "~/.zshenv", "~/.zprofile", "~/.bashrc", "~/.profile"]
+# Globs for roots too big to walk (the user site-packages hold the 7 pip
+# editable installs whose .pth/finder/direct_url carry the project path).
+user_globs = [
+  "~/.local/lib/python3*/site-packages/*.pth",
+  "~/.local/lib/python3*/site-packages/__editable__*.py",
+  "~/.local/lib/python3*/site-packages/*.dist-info/direct_url.json",
+  # Out-of-tree venvs (e.g. ~/.local/share/freedays/venv) carrying editable
+  # installs of repos that moved.
+  "~/.local/share/*/venv/pyvenv.cfg", "~/.local/share/*/venv/bin/*",
+  "~/.local/share/*/venv/lib/python3*/site-packages/*.pth",
+  "~/.local/share/*/venv/lib/python3*/site-packages/__editable__*.py",
+  "~/.local/share/*/venv/lib/python3*/site-packages/*.dist-info/direct_url.json",
+  "~/.local/share/*/.venv/pyvenv.cfg", "~/.local/share/*/.venv/bin/*",
+  "~/.local/share/*/.venv/lib/python3*/site-packages/*.pth",
+  "~/.local/share/*/.venv/lib/python3*/site-packages/__editable__*.py",
+  "~/.local/share/*/.venv/lib/python3*/site-packages/*.dist-info/direct_url.json",
+]
+# Same, but owned by root: rewritten through `sudo` with the diff shown first.
+sudo_roots = ["/etc/systemd/system", "/usr/local/bin"]
+# JSON whose string values are rewritten only under these top-level keys.
+claude_json = "~/.claude.json"
+claude_json_keys = ["mcpServers", "projects"]
+# Inside every moved repo: tracked files (git ls-files) plus these
+# untracked-but-live globs. Venvs are not relocatable by design (absolute
+# shebangs, VIRTUAL_ENV=, editable .pth) so their text files are rewritten too.
+repo_untracked_globs = [
+  ".git/config", ".git/hooks/*", ".env", ".env.*", "*.env", ".api_token",
+  "android/local.properties",
+  ".venv/pyvenv.cfg", ".venv/bin/*", ".venv/lib/python*/site-packages/*.pth",
+  ".venv/lib/python*/site-packages/__editable__*.py",
+  ".venv/lib/python*/site-packages/*.dist-info/direct_url.json",
+  "venv/pyvenv.cfg", "venv/bin/*", "venv/lib/python*/site-packages/*.pth",
+  ".ci-mirror-venv/pyvenv.cfg", ".ci-mirror-venv/bin/*",
+  ".ci-mirror-venv/lib/python*/site-packages/*.pth",
+  ".ci-mirror-venv/lib/python*/site-packages/__editable__*.py",
+  "*/.venv/pyvenv.cfg", "*/.venv/bin/*",
+]
+# Directory names skipped while walking roots (caches, histories, venvs
+# outside repos) and file suffixes never rewritten (session transcripts).
+prune_dirs = [
+  ".git", "node_modules", "__pycache__", ".venv", "venv", ".ci-mirror-venv",
+  ".cache", "build", ".dart_tool",
+  "file-history", "chrome", "cache", "plugins", "backups", "logs",
+  "paste-cache", "handoff", "tasks", "uploads", "memories.bak", "jobs",
+  "sessions", "shell-snapshots", "debug", "statsig", "todos", "autopsy", "plans",
+]
+# Claude Code keys per-project memory by the sanitised project path
+# (~/.claude/projects/-home-kuhy-todo). Those directories are renamed to
+# follow the repo, or every project's memory would be orphaned.
+claude_projects_dir = "~/.claude/projects"
+prune_suffixes = [".jsonl"]
+# Non-repo moved dirs (services, data) are not walked whole; only these
+# config-shaped files up to two levels down are inspected.
+nongit_globs = [
+  "*.yml", "*.yaml", "*.toml", "*.json", "*.env", ".env", "*.sh", "*.service",
+  "*.timer", "*.conf", "*.ini", "*.desktop", "Caddyfile", "*.py",
+  "*/*.yml", "*/*.yaml", "*/*.toml", "*/*.json", "*/*.env", "*/.env", "*/*.sh",
+  "*/*.service", "*/*.conf", "*/Caddyfile", "*/.runner", "*/.path",
+  "*", "*/*",
+]
+# Never rewrite files larger than this or containing NUL bytes.
+max_file_bytes = 5000000
+
+# ---------------------------------------------------------------------------
+# Migration map: every visible entry of ~ today -> its new home.
+# Keys may be nested ("kuhylog/kuhylog") to hoist a repo out of a wrapper
+# dir; deeper keys are processed first. Archive entries carry a date prefix
+# (from the name where it had one, else the entry's mtime).
+# ---------------------------------------------------------------------------
+[map]
+# --- src: repos kuhy owns (kuhyx remote or no remote) ---------------------
+"artgate-gen" = "src/artgate-gen"
+"awesome-mcp-explorer" = "src/awesome-mcp-explorer"
+"betting-sim" = "src/betting-sim"
+"car-rental-sim" = "src/car-rental-sim"
+"control-panel" = "src/control-panel"
+"CV" = "src/CV"
+"diet-guard" = "src/diet-guard"
+"digital-wellbeing" = "src/digital-wellbeing"
+"dufs-cloud" = "src/dufs-cloud"
+"epopeja_karta" = "src/epopeja_karta"
+"europe-county-map" = "src/europe-county-map"
+"flax-editor-mcp" = "src/flax-editor-mcp"
+"habit_stack" = "src/habit_stack"
+"home-guard" = "src/home-guard"
+"home_inventory" = "src/home_inventory"
+"hosts-blocker" = "src/hosts-blocker"
+"hotline3d/hotline-kernel" = "src/hotline-kernel"
+"i3wm-mcp" = "src/i3wm-mcp"
+"infakt-pipeline" = "src/infakt-pipeline"
+"iron-and-anvil" = "src/iron-and-anvil"
+"kcd2-dice-solver" = "src/kcd2-dice-solver"
+"konbini-67" = "src/konbini-67"
+"kuhylog/kuhylog" = "src/kuhylog"
+"kuhytrack" = "src/kuhytrack"
+"leetcode-guard" = "src/leetcode-guard"
+"levels-of-typing" = "src/levels-of-typing"
+"lyricanki" = "src/lyricanki"
+"macro-cam" = "src/macro-cam"
+"manga_translate/mangatl" = "src/mangatl"
+"mcp-servers" = "src/mcp-servers"
+"octoforge/octoforge" = "src/octoforge"
+"opengameart-mcp" = "src/opengameart-mcp"
+"osu-automapper" = "src/osu-automapper"
+"personal-website" = "src/personal-website"
+"phone-focus-mode" = "src/phone-focus-mode"
+"platformer" = "src/platformer"
+"portrait-forge" = "src/portrait-forge"
+"punchme" = "src/punchme"
+"rally" = "src/rally"
+"restaurant-rater" = "src/restaurant-rater"
+"roadside-assistance" = "src/roadside-assistance"
+"screen-locker" = "src/screen-locker"
+"signal-bot" = "src/signal-bot"
+"sims3-clone" = "src/sims3-clone"
+"steam-backlog-enforcer" = "src/steam-backlog-enforcer"
+"steam-game-installer" = "src/steam-game-installer"
+"system-maintenance" = "src/system-maintenance"
+"testsAndMisc" = "src/testsAndMisc"
+"todo" = "src/todo"
+"untools" = "src/untools"
+"utils" = "src/utils"
+"wake-alarm" = "src/wake-alarm"
+"wiki-kb" = "src/wiki-kb"
+"WUT_Computer_Science" = "src/WUT_Computer_Science"
+"yay-mcp" = "src/yay-mcp"
+# --- vendor: third-party clones and forks ---------------------------------
+"aseprite-mcp" = "vendor/aseprite-mcp"
+"build-your-own-x" = "vendor/build-your-own-x"
+"depotdownloader" = "vendor/depotdownloader"
+"Mapperatorinator" = "vendor/Mapperatorinator"
+"runnerup" = "vendor/runnerup"
+"syncyomi-src" = "vendor/syncyomi-src"
+"tachiyomisy" = "vendor/tachiyomisy"
+"warriorjs" = "vendor/warriorjs"
+# --- services: compose stacks and daemons ---------------------------------
+"actions-runner" = "services/actions-runner"
+"adguard" = "services/adguard"
+"gitea" = "services/gitea"
+"kcd2-dice-serve" = "services/kcd2-dice-serve"
+"personal-website-serve" = "services/personal-website-serve"
+"searxng" = "services/searxng"
+"signal-api" = "services/signal-api"
+"syncyomi" = "services/syncyomi"
+"syncyomi_test" = "services/syncyomi_test"
+# --- data -----------------------------------------------------------------
+"artgate-output" = "data/artgate-output"
+"aseprite" = "data/aseprite-sprites"
+"byox-ladder" = "data/byox-ladder"
+"city" = "data/city"
+"claude-prompts" = "data/claude-prompts"
+"cloud" = "data/cloud"
+"exports" = "data/exports"
+"feedback" = "data/feedback"
+"flax-editor" = "data/flax-editor"
+"flax-mcp-test" = "data/flax-mcp-test"
+"joplinBackups" = "data/joplinBackups"
+"Keepass" = "data/Keepass"
+"kuhylog" = "data/kuhylog"
+"llama_cpp_dart_local" = "data/llama_cpp_dart_local"
+"mail" = "data/mail"
+"manga_translate" = "data/manga_translate"
+"mcp-gateway-entries" = "data/mcp-gateway-entries"
+"models" = "data/models"
+"nltk_data" = "data/nltk_data"
+"opengameart-downloads" = "data/opengameart-downloads"
+"osu-automapper_data" = "data/osu-automapper_data"
+"packs" = "data/packs"
+"phone-backup" = "data/phone-backup"
+"roadside-assistance_binaries" = "data/roadside-assistance_binaries"
+"stl" = "data/stl"
+"testsAndMisc_binaries" = "data/testsAndMisc_binaries"
+"thunderbird" = "data/thunderbird"
+# --- media ----------------------------------------------------------------
+"grupka_photos" = "media/grupka_photos"
+"inne" = "media/inne"
+"Screenshots" = "media/Screenshots"
+# --- games ----------------------------------------------------------------
+"bottles" = "games/bottles"
+"Games" = "games/Games"
+"ps2_games" = "games/ps2_games"
+"Unity" = "games/Unity"
+"UnrealEngine" = "games/UnrealEngine"
+"VirtualBox VMs" = "games/VirtualBox VMs"
+# --- sdk ------------------------------------------------------------------
+"Android" = "sdk/Android"
+"aur" = "sdk/aur"
+"fvm" = "sdk/fvm"
+"go" = "sdk/go"
+# --- archive: dated backups, handoffs, finished-session leftovers ---------
+"BACKLOG.pre-migration-2026-07-26.md" = "archive/2026-07-26-todo-BACKLOG.pre-migration.md"
+"claude_refactor_staging" = "archive/2026-08-14-claude_refactor_staging"
+"diet-guard-peer-backup" = "archive/2026-08-21-diet-guard-peer-backup"
+"hotline3d" = "archive/2026-08-14-hotline3d-leftovers"
+"octoforge" = "archive/2026-08-14-octoforge-leftovers"
+"punchme_backups" = "archive/2026-08-28-punchme_backups"
+"punchme_scratch" = "archive/2026-09-11-punchme_scratch"
+"rtdb-backup-2026-08-09" = "archive/2026-08-09-rtdb-backup"
+"rtdb-backup-2026-08-09-pass2" = "archive/2026-08-09-rtdb-backup-pass2"
+"screen-locker-backup-20260705-200741" = "archive/2026-07-05-screen-locker-backup-200741"
+"screen-locker-data-backup-20260810" = "archive/2026-08-10-screen-locker-data-backup"
+"screen-locker-firebase-backup-20260822.json" = "archive/2026-08-22-screen-locker-firebase-backup.json"
+"screen-locker-firebase-backup-prerun.json" = "archive/2026-08-22-screen-locker-firebase-backup-prerun.json"
+"signal-bot-backup-20260829-222303.bundle" = "archive/2026-08-29-signal-bot-backup-222303.bundle"
+"signal-bot-backup-20260829-222303-worktree" = "archive/2026-08-29-signal-bot-backup-222303-copy"
+"signal-bot-db-backup-20260907-182915.sqlite3" = "archive/2026-09-07-signal-bot-db-backup-182915.sqlite3"
+"signal-bot-pack-manifests-backup-20260831" = "archive/2026-08-31-signal-bot-pack-manifests-backup"
+"signal-bot-peer-work-20260829" = "archive/2026-08-29-signal-bot-peer-work"
+"signal_bot.sqlite3.bak-20260830-192201" = "archive/2026-08-30-signal_bot.sqlite3.bak-192201"
+"signal_bot.sqlite3.bak-20260830-201436" = "archive/2026-08-30-signal_bot.sqlite3.bak-201436"
+"steam-backlog-enforcer-handoff-7d61d137" = "archive/2026-08-24-steam-backlog-enforcer-handoff-7d61d137"
+"steam-state-backup-20260804" = "archive/2026-08-04-steam-state-backup"
+"syncyomi_safe_2026-08-28" = "archive/2026-08-28-syncyomi_safe"
+"tachiyomisy-syncfix-2026-08-28.patch" = "archive/2026-08-28-tachiyomisy-syncfix.patch"
+"todo-desktop-profile.backup-2026-07-26" = "archive/2026-07-26-todo-desktop-profile.backup"
+"todo_backlog_backup_2026-07-11.db" = "archive/2026-07-11-todo_backlog_backup.db"
+# --- inbox: zero-reference loose files; the 14-day nag surfaces them -------
+"2142740.torrent" = "inbox/2142740.torrent"
+"_autidx_.aux" = "inbox/_autidx_.aux"
+"_autidx_.bib" = "inbox/_autidx_.bib"
+"chrome-kajebgjangihfbkjfejcanhanjmmbcfd-Default.desktop" = "inbox/chrome-kajebgjangihfbkjfejcanhanjmmbcfd-Default.desktop"
+"claude_crs.txt" = "inbox/claude_crs.txt"
+"claude_crs2.txt" = "inbox/claude_crs2.txt"
+"claude_df.txt" = "inbox/claude_df.txt"
+"claude_write_test.txt" = "inbox/claude_write_test.txt"
+"Crusader Kings III.desktop" = "inbox/Crusader Kings III.desktop"
+"fix_me_claude.txt" = "inbox/fix_me_claude.txt"
+"fix_me_claude_2.txt" = "inbox/fix_me_claude_2.txt"
+"food_bank.json" = "inbox/food_bank.json"
+"food_log.json" = "inbox/food_log.json"
+"index.html" = "inbox/index.html"
+"INSTALLER_FIX_FINDINGS.md" = "inbox/INSTALLER_FIX_FINDINGS.md"
+"install.sh" = "inbox/install.sh"
+"installfix.sh" = "inbox/installfix.sh"
+"Kingdom Come Deliverance II.desktop" = "inbox/Kingdom Come Deliverance II.desktop"
+"nyaa-1894473.torrent" = "inbox/nyaa-1894473.torrent"
+"ok.html" = "inbox/ok.html"
+"oki.html" = "inbox/oki.html"
+"pi.html" = "inbox/pi.html"
+"pi2.html" = "inbox/pi2.html"
+"pp.html" = "inbox/pp.html"
+"pub.html" = "inbox/pub.html"
+"skyrim_failing.log" = "inbox/skyrim_failing.log"
+"slop.py" = "inbox/slop.py"
+"SPEC-sims3.md" = "inbox/SPEC-sims3.md"
+"steam-813780.log" = "inbox/steam-813780.log"
+"steam.desktop" = "inbox/steam.desktop"
+"The Count Lucanor.desktop" = "inbox/The Count Lucanor.desktop"
+"vc_redist.x64.exe" = "inbox/vc_redist.x64.exe"
+"verify.sh" = "inbox/verify.sh"
+
+# Names that no longer exist in ~ but are still referenced (pre-existing
+# breakage found by the audit). Rewritten like map entries, never moved.
+[aliases]
+"linux-configuration/hosts" = "src/hosts-blocker"
+"linux-configuration" = "src/testsAndMisc/linux_configuration"
+"crdt-sync" = "src/utils/crdt-sync"
+"crdt_sync_dart" = "src/utils/crdt_sync_dart"
+
+# ---------------------------------------------------------------------------
+# Per-entry hooks: commands a text rewrite cannot replace. `before` runs
+# before the entry moves, `after` runs after every rewrite is done. Paths
+# in commands are written against the NEW layout. `sudo = true` marks
+# root steps, which `--plan` prints as one block.
+# ---------------------------------------------------------------------------
+[[hook]]
+entry = "gitea"
+before = ["docker compose -f ~/gitea/docker-compose.yml down"]
+after = ["docker compose -f ~/services/gitea/docker-compose.yml up -d"]
+
+[[hook]]
+entry = "searxng"
+before = ["docker compose -f ~/searxng/docker-compose.yml down"]
+after = ["docker compose -f ~/services/searxng/docker-compose.yml up -d"]
+
+[[hook]]
+entry = "syncyomi"
+before = ["docker compose -f ~/syncyomi/docker-compose.yml down"]
+after = ["docker compose -f ~/services/syncyomi/docker-compose.yml up -d"]
+
+[[hook]]
+entry = "kcd2-dice-serve"
+before = ["docker compose -f ~/kcd2-dice-serve/docker-compose.yml down"]
+after = ["docker compose -f ~/services/kcd2-dice-serve/docker-compose.yml up -d"]
+
+[[hook]]
+entry = "personal-website-serve"
+before = ["docker compose -f ~/personal-website-serve/docker-compose.yml down"]
+after = ["docker compose -f ~/services/personal-website-serve/docker-compose.yml up -d"]
+
+[[hook]]
+entry = "testsAndMisc"
+before = ["docker compose -f ~/testsAndMisc/endurain/docker-compose.yml down"]
+after = ["docker compose -f ~/src/testsAndMisc/endurain/docker-compose.yml up -d"]
+
+[[hook]]
+# Started ad hoc by signal-bot/scripts/register_bot.sh (no compose project);
+# the bind mount is baked into the container, so it must be recreated.
+entry = "signal-api"
+before = ["docker rm -f signal-api"]
+after = [
+  "docker run -d --name signal-api --restart=always -p 9922:8080 -v ~/services/signal-api:/home/.local/share/signal-cli -e MODE=json-rpc bbernhard/signal-cli-rest-api:1787779383-ci",
+]
+
+[[hook]]
+entry = "actions-runner"
+sudo = true
+before = ["systemctl stop actions.runner.kuhyx-aseprite-mcp.kuhy-aseprite-runner.service"]
+after = [
+  "bash -c 'cd ~/services/actions-runner/aseprite-mcp && sudo ./svc.sh uninstall && sudo ./svc.sh install kuhy && sudo ./svc.sh start'",
+]
+
+[[hook]]
+# The four vmbox shares bind-mount these repos; a mounted tree cannot move.
+entry = "levels-of-typing"
+sudo = true
+before = ["umount ~/.local/share/vmbox/share/levels-of-typing"]
+after = []
+
+[[hook]]
+entry = "platformer"
+sudo = true
+before = ["umount ~/.local/share/vmbox/share/platformer"]
+after = []
+
+[[hook]]
+entry = "car-rental-sim"
+sudo = true
+before = ["umount ~/.local/share/vmbox/share/car-rental-sim"]
+after = []
+
+[[hook]]
+entry = "home-guard"
+sudo = true
+before = ["umount ~/.local/share/vmbox/share/home-guard"]
+after = []
+
+[rebind]
+# Run once after all moves and rewrites, in this order.
+user = [
+  "systemctl --user daemon-reload",
+  "i3-msg reload",
+  "update-desktop-database ~/.local/share/applications",
+]
+sudo = ["systemctl daemon-reload"]
+# Units restarted after daemon-reload (only if currently active).
+restart_user_units = [
+  "endurain-import.service", "syncyomi-guard.service", "morning-routine.service",
+  "freedays-sync.service", "workout-locker.service", "workout-sync.service",
+  "screen-locker-web.service", "diet-guard-gate.service", "diet-guard-sync.service",
+  "home-guard-gate.service", "leetcode-guard.service", "leetcode-guard-web.service",
+  "wake-alarm-trigger.service", "steam-backlog-enforcer-web.service",
+  "signal-bot.service", "signal-bot-manage.service", "signal-api-watchdog.service",
+  "signal-jsonrpc-rebind.service", "kcd2-dice-build.service",
+]
+# Not listed on purpose: claude-remote-control.service (would cut the live
+# remote session) and steam-backlog-enforcer.service (never bounce the
+# enforcer while Steam runs) — both pick up the new paths on their next
+# natural restart; their unit files are rewritten like every other.
+restart_sudo_units = [
+  "dufs.service", "media-cloud-sync.path", "media-organizer.service",
+  "nftables-drift.timer",
+]
+# Repos whose rewritten files are committed (narrow `git add` of exactly the
+# rewritten tracked files; each repo's pre-commit hooks are the gate; CI runs
+# the suites on push) then pushed in one batch. utils first (it owns every
+# other repo's gate), then testsAndMisc. Set finish_script to
+# ~/.claude/scripts/finish_auto.sh to run every repo's full test suite
+# serially instead.
+commit_order_first = ["src/utils", "src/testsAndMisc"]
+finish_script = ""
+commit_trailers = [
+  "Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>",
+  "Claude-Session: https://claude.ai/code/session_01AwtowrowDXx6ccmWVPkCaF",
+]
+
+[verify]
+# Run after --apply, twice: with bridge symlinks present and with them moved
+# aside. Built in (not listed): no unit newly failed vs the pre-apply
+# baseline, every unit that was active stays active, every MCP server
+# command in ~/.claude.json is executable.
+user = [
+  "~/src/i3wm-mcp/.venv/bin/python -V",
+  "~/src/wiki-kb/.venv/bin/python -V",
+  "~/src/opengameart-mcp/.venv/bin/python -V",
+  "~/src/infakt-pipeline/.venv/bin/python -V",
+  "~/src/screen-locker/.venv/bin/python -V",
+  "~/src/signal-bot/.venv/bin/python -V",
+  "~/vendor/aseprite-mcp/.venv/bin/python -V",
+  "python3 -c 'import screen_locker, diet_guard, home_guard, leetcode_guard, wake_alarm, steam_backlog_enforcer'",
+  "python3 -c 'import screen_locker, sys; sys.exit(0 if screen_locker.__file__.startswith(sys.argv[1]) else 1)' ~/src/screen-locker",
+  "go env GOPATH",
+  "i3-msg -t get_version",
+  "docker ps --format '{{.Names}}' | grep -qx signal-api",
+  "docker compose -f ~/services/gitea/docker-compose.yml ps --status running -q | grep -q .",
+  "docker compose -f ~/services/searxng/docker-compose.yml ps --status running -q | grep -q .",
+  "docker compose -f ~/services/syncyomi/docker-compose.yml ps --status running -q | grep -q .",
+  "docker compose -f ~/services/kcd2-dice-serve/docker-compose.yml ps --status running -q | grep -q .",
+  "docker compose -f ~/services/personal-website-serve/docker-compose.yml ps --status running -q | grep -q .",
+  "docker compose -f ~/src/testsAndMisc/endurain/docker-compose.yml ps --status running -q | grep -q .",
+  "test -x \"$(readlink -f ~/.local/bin/vm)\"",
+  "test -x \"$(readlink -f ~/.local/bin/infakt-pipeline)\"",
+  "test -x \"$(readlink -f ~/.local/bin/depotdownloader)\"",
+  "test -x \"$(readlink -f /usr/local/bin/start-player2)\"",
+  "bash -n ~/.zshrc && zsh -n ~/.zshrc",
+  "test $(find ~ -maxdepth 1 -mindepth 1 ! -name '.*' ! -type l | wc -l) -le 14",
+]
+sudo = ["systemctl is-active --quiet dufs.service"]

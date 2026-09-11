@@ -1,0 +1,12 @@
+[Unit]
+Description=home-tidy: sweep stray ~ entries to inbox/ and lint the layout
+Documentation=file://__REPO__/home-tidy.toml
+
+[Service]
+Type=oneshot
+# sweep ends with the lint, which writes ~/.local/state/home-tidy/report.txt
+# for the zsh login nag; a non-zero exit here only means "something to show".
+ExecStart=/usr/bin/python3 __REPO__/bin/home_tidy.py sweep
+SuccessExitStatus=1
+Nice=19
+IOSchedulingClass=idle
