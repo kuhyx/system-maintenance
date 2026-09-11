@@ -80,7 +80,7 @@ def test_commit_paths(home: Path) -> None:
     assert "X: y" in log
     execute_post(Action("c", "commit", "", payload=("todo", ["README.md"])), ctx)  # nothing left: no-op
     ctx2 = _ctx(home, real, **{'finish_script = ""\ncommit_trailers = ["X: y"]': 'finish_script = "~/fake_finish.sh"'})
-    (repo / "extra.md").write_text("~/src/utils/x\n")
+    (repo / "extra.md").write_text("~/utils/x\n")
     subprocess.run(["git", "-C", str(repo), "add", "extra.md"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "extra"], check=True)
     (repo / "extra.md").write_text("~/src/utils/x\n")

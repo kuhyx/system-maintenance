@@ -63,12 +63,20 @@ def _plan_located(items: list[Located], rewriter: Rewriter, max_bytes: int, plan
     return changed
 
 
+def _keep(items: list[Located], skip: tuple[Path, ...]) -> list[Located]:
+    """Drop located files under any manifest ``skip_paths`` entry."""
+    if not skip:
+        return items
+    return [i for i in items if not any(i.path == s or s in i.path.parents for s in skip)]
+
+
 def plan_rewrites(manifest: Manifest, plan, done: set[str], action_cls) -> None:
     """Add every rewrite, link and JSON action to ``plan``."""
     rewriter = Rewriter(manifest.rewrite_mapping(), manifest.home)
     max_bytes = manifest.refs.max_file_bytes
-    _plan_located(user_locations(manifest), rewriter, max_bytes, plan, action_cls)
-    _plan_located(sudo_locations(manifest), rewriter, max_bytes, plan, action_cls)
+    skip = tuple(manifest.expand(s) for s in manifest.refs.skip_paths)
+    _plan_located(_keep(user_locations(manifest), skip), rewriter, max_bytes, plan, action_cls)
+    _plan_located(_keep(sudo_locations(manifest), skip), rewriter, max_bytes, plan, action_cls)
     if manifest.refs.claude_json:
         jc = plan_claude_json(manifest.expand(manifest.refs.claude_json), manifest.refs.claude_json_keys, rewriter)
         if jc:
@@ -77,7 +85,7 @@ def plan_rewrites(manifest: Manifest, plan, done: set[str], action_cls) -> None:
     for _old_rel, now, new_abs in moved_dirs(manifest, done):
         is_git = (now / ".git").exists()
         globs = manifest.refs.repo_untracked_globs if is_git else manifest.refs.nongit_globs
-        items = repo_locations(now, globs)
+        items = _keep(repo_locations(now, globs), skip)
         tracked = set(tracked_files(now)) if is_git else set()
         changed = _plan_located(items, rewriter, max_bytes, plan, action_cls, now, new_abs, tracked)
         rel = str(new_abs.relative_to(manifest.home))

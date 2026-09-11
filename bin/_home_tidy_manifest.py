@@ -40,6 +40,10 @@ class RefsConfig:
     nongit_globs: tuple[str, ...]
     prune_dirs: frozenset[str]
     prune_suffixes: tuple[str, ...]
+    # Paths never rewritten, however they are reached. This tool's own test
+    # corpus spells pre-move paths on purpose; rewriting them turns every
+    # assertion into a tautology (it did, on 2026-09-11, in commit bdf2a5e).
+    skip_paths: tuple[str, ...]
     max_file_bytes: int
 
 
@@ -172,6 +176,7 @@ def load_manifest(path: Path, home: Path) -> Manifest:
             nongit_globs=_tuple(refs.get("nongit_globs")),
             prune_dirs=frozenset(refs.get("prune_dirs", ())),
             prune_suffixes=_tuple(refs.get("prune_suffixes")),
+            skip_paths=_tuple(refs.get("skip_paths")),
             max_file_bytes=int(refs.get("max_file_bytes", 5_000_000)),
         ),
         mapping=dict(raw.get("map", {})),

@@ -128,6 +128,10 @@ prune_dirs = [
 # follow the repo, or every project's memory would be orphaned.
 claude_projects_dir = "~/.claude/projects"
 prune_suffixes = [".jsonl"]
+# Never rewritten, however they are reached: this tool's own tests spell
+# pre-move paths deliberately, so rewriting them turns every assertion
+# into a tautology and silently disarms the suite.
+skip_paths = ["~/src/system-maintenance/tests"]
 # Non-repo moved dirs (services, data) are not walked whole; only these
 # config-shaped files up to two levels down are inspected.
 nongit_globs = [

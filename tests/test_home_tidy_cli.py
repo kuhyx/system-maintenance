@@ -57,7 +57,7 @@ def test_migrate_plan_errors_and_sudo_gate(home: Path, monkeypatch: pytest.Monke
     (home / "src" / "todo").rmdir()
     p = home / "home-tidy.toml"
     (home / "sudoroot").mkdir()
-    (home / "sudoroot" / "unit").write_text("ExecStart=~/src/todo/run.sh\n")
+    (home / "sudoroot" / "unit").write_text("ExecStart=~/todo/run.sh\n")
     p.write_text(p.read_text().replace('sudo_roots = []', f'sudo_roots = ["{home}/sudoroot"]'))
     monkeypatch.setattr(home_tidy.Runner, "sudo_available", lambda self: False)
     assert home_tidy.main(_args(home, "migrate", "--apply", "--yes")) == 3

@@ -11,10 +11,10 @@ import pytest
 from home_tidy_fixture import build_home
 from test_home_tidy_migrate import FakeRunner
 
-from _home_tidy_locations import _walk, locate
+from _home_tidy_locations import Located, _walk, locate
 from _home_tidy_manifest import load_manifest
 from _home_tidy_migrate import Plan, build_plan
-from _home_tidy_plan_refs import _merge_journaled
+from _home_tidy_plan_refs import _keep, _merge_journaled
 from _home_tidy_run import Runner
 from _home_tidy_verify import run_suite
 
@@ -52,6 +52,15 @@ def test_no_claude_json_key(home: Path) -> None:
     assert not any(a.phase == "json" for a in plan.actions)
     m = load_manifest(p, home)
     assert run_suite(m, FakeRunner(), {}) == []
+
+
+def test_keep_drops_only_skipped_paths(tmp_path: Path) -> None:
+    """``skip_paths`` protects a subtree; with none set nothing is filtered."""
+    skipped = tmp_path / "tests" / "fixture.py"
+    kept = tmp_path / "bin" / "tool.py"
+    items = [Located(skipped), Located(kept), Located(tmp_path / "tests")]
+    assert _keep(items, ()) == items
+    assert [i.path for i in _keep(items, (tmp_path / "tests",))] == [kept]
 
 
 def test_merge_journaled(home: Path) -> None:

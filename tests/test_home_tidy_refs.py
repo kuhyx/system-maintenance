@@ -32,17 +32,24 @@ def rw() -> Rewriter:
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("cd ~/src/todo && x", "cd ~/src/todo && x"),
-        ("WorkingDirectory=%h/src/todo", "WorkingDirectory=%h/src/todo"),
+        ("cd ~/todo && x", "cd ~/src/todo && x"),
+        ("WorkingDirectory=%h/todo", "WorkingDirectory=%h/src/todo"),
         ("/home/u/todo-desktop", "/home/u/todo-desktop"),
         ("Exec=/home/u/kuhylog/kuhylog/build", "Exec=/home/u/src/kuhylog/build"),
-        ('"$HOME/data/kuhylog/boards.json"', '"$HOME/data/kuhylog/boards.json"'),
-        ("${HOME}/games/VirtualBox VMs/x", "${HOME}/games/VirtualBox VMs/x"),
+        ('"$HOME/kuhylog/boards.json"', '"$HOME/data/kuhylog/boards.json"'),
+        ("${HOME}/VirtualBox VMs/x", "${HOME}/games/VirtualBox VMs/x"),
         ("~/src/todo", "~/src/todo"),
-        ('Path.home() / "src/todo" / "x"', 'Path.home() / "src/todo" / "x"'),
-        ('_HOME / "src/kuhylog"', '_HOME / "src/kuhylog"'),
-        ("os.path.join(HOME, 'data/kuhylog')", "os.path.join(HOME, 'data/kuhylog')"),
+        ('Path.home() / "todo" / "x"', 'Path.home() / "src/todo" / "x"'),
+        ('_HOME / "kuhylog" / "kuhylog"', '_HOME / "src/kuhylog"'),
+        ("os.path.join(HOME, 'kuhylog')", "os.path.join(HOME, 'data/kuhylog')"),
         ('HOME / "todo-app"', 'HOME / "todo-app"'),
+        # A `$` ends the path just as a slash does: generated launchers spell
+        # the repo root as `<root>${PYTHONPATH:+:$PYTHONPATH}`, and one such
+        # wrapper in /usr/local/bin survived the whole migration unrewritten.
+        (
+            'export PYTHONPATH="/home/u/todo${PYTHONPATH:+:$PYTHONPATH}"',
+            'export PYTHONPATH="/home/u/src/todo${PYTHONPATH:+:$PYTHONPATH}"',
+        ),
     ],
 )
 def test_rewrite_text(rw: Rewriter, text: str, expected: str) -> None:
@@ -70,7 +77,7 @@ def test_is_text_file_guards(tmp_path: Path) -> None:
 
 def test_plan_file(tmp_path: Path, rw: Rewriter) -> None:
     f = tmp_path / "f"
-    f.write_text("x ~/src/todo y\n")
+    f.write_text("x ~/todo y\n")
     fc = plan_file(f, rw, 1000)
     assert fc is not None and fc.count == 1 and "+x ~/src/todo y" in fc.diff
     f.write_text("nothing here\n")

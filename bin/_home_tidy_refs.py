@@ -3,7 +3,7 @@
 One regex covers every spelling of a home-relative path (``~/x``,
 ``$HOME/x``, ``${HOME}/x``, systemd's ``%h/x`` and the literal
 ``/home/<user>/x``) and rewrites only the entry component, so the original
-spelling is preserved. A word boundary after the entry name keeps ``~/src/todo``
+spelling is preserved. A word boundary after the entry name keeps ``~/todo``
 from matching ``~/todo-desktop-profile...``. Files are read and written
 whole through the resolved path — never ``sed -i`` — so a symlinked file is
 edited in place instead of being silently forked.
@@ -18,7 +18,10 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-_BOUNDARY = r"""(?=[/\s"'`:;,)\]}>|&=]|$)"""
+# A literal `$` counts as a boundary too: `$REPO${PYTHONPATH:+...}` in a
+# generated launcher is exactly how /usr/local/bin/wsg-grabber kept the
+# pre-move path through the whole rewrite pass.
+_BOUNDARY = r"""(?=[/\s"'`:;,)\]}>|&=$]|$)"""
 _PROBE_BYTES = 8192
 
 
@@ -57,8 +60,8 @@ class Rewriter:
         self.pattern = re.compile(
             rf"(?P<prefix>{prefixes})/(?P<name>{alternatives}){_BOUNDARY}"
         )
-        # Code that builds the path piecewise: ``Path.home() / "src/todo"``,
-        # ``_HOME / "src/kuhylog"``, ``os.path.join(HOME, "src/utils")``.
+        # Code that builds the path piecewise: ``Path.home() / "todo"``,
+        # ``_HOME / "kuhylog" / "kuhylog"``, ``os.path.join(HOME, "utils")``.
         # Quoted segments of a nested key ("a/b") may be split across
         # ``/ "a" / "b"``; the replacement is one quoted relative path.
         pieces = []
