@@ -102,7 +102,9 @@ def test_run_check_rules(home: Path) -> None:
     assert ("git-only", "src/notgit", False) in rules
     assert ("xdg-home", "XDG_DESKTOP_DIR", False) in rules and ("xdg-home", "XDG_MUSIC_DIR", False) not in rules
     assert ("inbox-stale", "inbox/old.txt", True) in rules and not any(p == "inbox/keep" for _, p, _ in rules)
-    assert ("bucket-size", "Downloads", True) in rules
+    for i in range(4):
+        (home / "src" / f"r{i}").mkdir()
+    assert ("bucket-size", "Downloads", True) in rules and not any(r == "bucket-size" and p == "src" for r, p, _ in rules)
     rules = [(v.rule, v.path) for v in run_check(m, now=_dt.datetime(2031, 1, 1).timestamp())]
     assert ("bridge-expired", "bridge-live") in rules and ("bridge", "bridge-gone") not in rules
     assert run_check(m)  # default "now" path

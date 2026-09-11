@@ -22,6 +22,10 @@ from _home_tidy_scan import bounded_stats, list_root
 
 LOCK_NAME = "migrate.lock"
 MOVES_NAME = "moves.jsonl"
+# The one-shot migration records its moves here, NOT in moves.jsonl: `undo`
+# must never be able to rename 171 entries back under references that all
+# point at the new paths.
+MIGRATION_MOVES_NAME = "migration-moves.jsonl"
 INSTALL_MARK = "installed-at"
 
 
@@ -36,15 +40,15 @@ class Move:
     batch: str = ""
 
 
-def journal_path(state_dir: Path) -> Path:
-    """Where the moves journal lives."""
-    return state_dir / MOVES_NAME
+def journal_path(state_dir: Path, name: str = MOVES_NAME) -> Path:
+    """Where a moves journal lives."""
+    return state_dir / name
 
 
-def append_moves(state_dir: Path, moves: list[Move]) -> None:
-    """Append to the journal (one JSON object per line)."""
+def append_moves(state_dir: Path, moves: list[Move], name: str = MOVES_NAME) -> None:
+    """Append to a journal (one JSON object per line)."""
     state_dir.mkdir(parents=True, exist_ok=True)
-    with journal_path(state_dir).open("a", encoding="utf-8") as fh:
+    with journal_path(state_dir, name).open("a", encoding="utf-8") as fh:
         for m in moves:
             fh.write(json.dumps(m.__dict__) + "\n")
 

@@ -21,7 +21,7 @@ from pathlib import Path
 from _home_tidy_manifest import Manifest, load_manifest
 from _home_tidy_rebind import execute_post
 from _home_tidy_refs import Rewriter, apply_file, apply_link
-from _home_tidy_sweep import LOCK_NAME, Move, append_moves
+from _home_tidy_sweep import LOCK_NAME, MIGRATION_MOVES_NAME, Move, append_moves
 from _home_tidy_verify import ensure_baseline
 
 JOURNAL_NAME = "migration.jsonl"
@@ -136,7 +136,9 @@ def _move(ctx: Context, old: str, new: str, sudo: bool) -> None:
     else:
         os.rename(src, dst)
     ts = _dt.datetime.now().isoformat(timespec="seconds")
-    append_moves(ctx.state_dir, [Move(str(src), str(dst), ts, "migrate", ctx.batch)])
+    append_moves(
+        ctx.state_dir, [Move(str(src), str(dst), ts, "migrate", ctx.batch)], MIGRATION_MOVES_NAME
+    )
 
 
 FS_PHASES = frozenset(

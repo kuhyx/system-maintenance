@@ -15,8 +15,11 @@ allow = [
 # Buckets whose direct children must be git repositories.
 git_only = ["src", "vendor"]
 # Warn (never fail) when a bucket holds more than this many entries
-# (Bergman 2010 heuristic).
+# (Bergman 2010 heuristic) -- except the buckets the layout made broad on
+# purpose: an extra level costs ~21x an extra item, so 55 repos in one
+# src/ is the design, not a finding.
 warn_bucket_size = 21
+broad_buckets = ["src", "data", "archive", "inbox", "Downloads"]
 
 [sweep]
 # A root entry younger than this is left alone (something may still be

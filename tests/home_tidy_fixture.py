@@ -19,6 +19,7 @@ MANIFEST = """
 allow = ["src", "vendor", "services", "data", "archive", "inbox", "Downloads", "Documents"]
 git_only = ["src", "vendor"]
 warn_bucket_size = 3
+broad_buckets = ["src"]
 
 [sweep]
 grace_minutes = 60

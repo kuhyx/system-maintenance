@@ -24,7 +24,7 @@ and a zero-fork login nag prints the last report. Nothing is ever deleted.
 ```bash
 bin/home_tidy.py check                 # lint; exit 1 on a failure
 bin/home_tidy.py sweep [--dry-run]     # stray root entries -> ~/inbox (journaled)
-bin/home_tidy.py undo [last|all|<ts>]  # replay the journal backwards
+bin/home_tidy.py undo [last|all|<ts>]  # replay sweeps backwards (never the migration)
 bin/home_tidy.py migrate --plan        # the one-shot reorganisation, read-only
 bin/home_tidy.py migrate --apply --yes # resumable, journaled, verifies itself
 bin/install_home_tidy.sh               # timer + ~/.zshrc nag (--remove undoes)

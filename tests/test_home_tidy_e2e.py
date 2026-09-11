@@ -92,4 +92,7 @@ def test_check_sweep_undo(fake_home: Path, capsys: pytest.CaptureFixture[str]) -
     assert (fake_home / "inbox" / "fake_finish.sh").exists()
     assert _run(fake_home, "undo", "last") == 0
     assert "2 move(s) restored" in capsys.readouterr().out
+    assert _run(fake_home, "undo", "all") == 0  # migration moves are out of undo's reach
+    assert "0 move(s) restored" in capsys.readouterr().out and (fake_home / "src" / "todo").is_dir()
+    assert (fake_home / ".state" / "migration-moves.jsonl").read_text().count('"migrate"') == 9
     assert (fake_home / "fake_finish.sh").exists() and not (fake_home / "inbox" / "fake_finish.sh").exists()

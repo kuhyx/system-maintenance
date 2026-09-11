@@ -3,7 +3,7 @@
 
     home_tidy.py check                 # exit 1 on any failure; writes the login nag
     home_tidy.py sweep [--dry-run]     # stray root entries -> ~/inbox (journaled)
-    home_tidy.py undo [--last|--all|<ts-prefix>]
+    home_tidy.py undo [last|all|<ts-prefix>]   # sweeps only, never the migration
     home_tidy.py migrate --plan        # read-only: moves, diffs, sudo block
     home_tidy.py migrate --apply --yes # resumable; journaled; commits via finish_auto
 

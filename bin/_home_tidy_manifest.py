@@ -74,6 +74,7 @@ class Manifest:
     home: Path
     allow: frozenset[str]
     git_only: tuple[str, ...]
+    broad_buckets: frozenset[str]
     warn_bucket_size: int
     sweep: SweepPolicy
     bridges_expires: str
@@ -146,6 +147,7 @@ def load_manifest(path: Path, home: Path) -> Manifest:
         home=home,
         allow=frozenset(root["allow"]),
         git_only=_tuple(root.get("git_only")),
+        broad_buckets=frozenset(root.get("broad_buckets", ())),
         warn_bucket_size=int(root.get("warn_bucket_size", 21)),
         sweep=SweepPolicy(
             grace_minutes=int(sweep["grace_minutes"]),

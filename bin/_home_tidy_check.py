@@ -96,7 +96,7 @@ def _rule_inbox(manifest: Manifest, now: float) -> list[Violation]:
 
 def _rule_bucket_size(manifest: Manifest) -> list[Violation]:
     out = []
-    for bucket in sorted(manifest.allow):
+    for bucket in sorted(manifest.allow - manifest.broad_buckets):
         n = len(visible_children(manifest.home / bucket))
         if n > manifest.warn_bucket_size:
             out.append(Violation("bucket-size", bucket, f"{n} entries > {manifest.warn_bucket_size}", warn=True))
