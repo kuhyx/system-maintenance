@@ -112,8 +112,8 @@ def build_home(home: Path) -> Path:
     """Populate ``home`` and return the manifest path written inside it."""
     h = str(home)
     _git_init(home / "todo", {
-        "README.md": f"see ~/utils/scripts/x.sh and {h}/utils/lib\nand ~/gone/old.py\n",
-        ".pre-commit-config.yaml": "entry: ~/utils/scripts/check.sh\n",
+        "README.md": f"see ~/src/utils/scripts/x.sh and {h}/utils/lib\nand ~/gone/old.py\n",
+        ".pre-commit-config.yaml": "entry: ~/src/utils/scripts/check.sh\n",
         "run.sh": "#!/bin/bash\ncd $HOME/todo\n",
     })
     _git_init(home / "utils", {"scripts/x.sh": "#!/bin/bash\necho x\n", "bin/tool": "#!/bin/sh\necho tool\n"})
@@ -140,7 +140,7 @@ def build_home(home: Path) -> Path:
     (home / "Downloads").mkdir()
     units = home / ".config" / "systemd" / "user"
     units.mkdir(parents=True)
-    (units / "todo.service").write_text("[Service]\nWorkingDirectory=%h/todo\nExecStart=%h/todo/run.sh\n")
+    (units / "todo.service").write_text("[Service]\nWorkingDirectory=%h/todo\nExecStart=%h/src/todo/run.sh\n")
     (home / ".config" / "user-dirs.dirs").write_text('XDG_DESKTOP_DIR="$HOME/"\nXDG_DOWNLOAD_DIR="$HOME/Downloads"\nXDG_DOCUMENTS_DIR="$HOME/"\n')
     lbin = home / ".local" / "bin"
     lbin.mkdir(parents=True)
@@ -150,7 +150,7 @@ def build_home(home: Path) -> Path:
     sp = home / ".local" / "lib" / "python3.99" / "site-packages"
     sp.mkdir(parents=True)
     (sp / "__editable__.todo.pth").write_text(f"{h}/todo\n")
-    (home / ".zshrc").write_text("export PATH=$HOME/utils/bin:$PATH\n")
+    (home / ".zshrc").write_text("export PATH=$HOME/src/utils/bin:$PATH\n")
     (home / ".claude.json").write_text(
         '{"numStartups": 1, "mcpServers": {"t": {"command": "' + h + '/utils/bin/tool", "args": ["--dir", "' + h + '/todo"]}},'
         ' "projects": {"' + h + '/todo": {"history": ["ran ' + h + '/todo/x"], "mcpServers": {"p": {"command": "' + h + '/todo/.venv/bin/python"}}},'

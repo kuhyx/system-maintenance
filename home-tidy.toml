@@ -344,32 +344,32 @@ max_file_bytes = 5000000
 # ---------------------------------------------------------------------------
 [[hook]]
 entry = "gitea"
-before = ["docker compose -f ~/gitea/docker-compose.yml down"]
+before = ["docker compose -f ~/services/gitea/docker-compose.yml down"]
 after = ["docker compose -f ~/services/gitea/docker-compose.yml up -d"]
 
 [[hook]]
 entry = "searxng"
-before = ["docker compose -f ~/searxng/docker-compose.yml down"]
+before = ["docker compose -f ~/services/searxng/docker-compose.yml down"]
 after = ["docker compose -f ~/services/searxng/docker-compose.yml up -d"]
 
 [[hook]]
 entry = "syncyomi"
-before = ["docker compose -f ~/syncyomi/docker-compose.yml down"]
+before = ["docker compose -f ~/services/syncyomi/docker-compose.yml down"]
 after = ["docker compose -f ~/services/syncyomi/docker-compose.yml up -d"]
 
 [[hook]]
 entry = "kcd2-dice-serve"
-before = ["docker compose -f ~/kcd2-dice-serve/docker-compose.yml down"]
+before = ["docker compose -f ~/services/kcd2-dice-serve/docker-compose.yml down"]
 after = ["docker compose -f ~/services/kcd2-dice-serve/docker-compose.yml up -d"]
 
 [[hook]]
 entry = "personal-website-serve"
-before = ["docker compose -f ~/personal-website-serve/docker-compose.yml down"]
+before = ["docker compose -f ~/services/personal-website-serve/docker-compose.yml down"]
 after = ["docker compose -f ~/services/personal-website-serve/docker-compose.yml up -d"]
 
 [[hook]]
 entry = "testsAndMisc"
-before = ["docker compose -f ~/testsAndMisc/endurain/docker-compose.yml down"]
+before = ["docker compose -f ~/src/testsAndMisc/endurain/docker-compose.yml down"]
 after = ["docker compose -f ~/src/testsAndMisc/endurain/docker-compose.yml up -d"]
 
 [[hook]]

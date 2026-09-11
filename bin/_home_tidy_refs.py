@@ -3,7 +3,7 @@
 One regex covers every spelling of a home-relative path (``~/x``,
 ``$HOME/x``, ``${HOME}/x``, systemd's ``%h/x`` and the literal
 ``/home/<user>/x``) and rewrites only the entry component, so the original
-spelling is preserved. A word boundary after the entry name keeps ``~/todo``
+spelling is preserved. A word boundary after the entry name keeps ``~/src/todo``
 from matching ``~/todo-desktop-profile...``. Files are read and written
 whole through the resolved path — never ``sed -i`` — so a symlinked file is
 edited in place instead of being silently forked.
@@ -57,8 +57,8 @@ class Rewriter:
         self.pattern = re.compile(
             rf"(?P<prefix>{prefixes})/(?P<name>{alternatives}){_BOUNDARY}"
         )
-        # Code that builds the path piecewise: ``Path.home() / "todo"``,
-        # ``_HOME / "kuhylog" / "kuhylog"``, ``os.path.join(HOME, "utils")``.
+        # Code that builds the path piecewise: ``Path.home() / "src/todo"``,
+        # ``_HOME / "src/kuhylog"``, ``os.path.join(HOME, "src/utils")``.
         # Quoted segments of a nested key ("a/b") may be split across
         # ``/ "a" / "b"``; the replacement is one quoted relative path.
         pieces = []
