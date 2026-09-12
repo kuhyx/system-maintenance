@@ -17,8 +17,10 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from _home_tidy_check import RESURRECTION_BUCKETS
+from _home_tidy_freshness import counterpart_for, newer_than_counterpart
 from _home_tidy_manifest import Manifest
-from _home_tidy_scan import bounded_stats, list_root
+from _home_tidy_scan import Entry, bounded_stats, list_root
 
 LOCK_NAME = "migrate.lock"
 MOVES_NAME = "moves.jsonl"
@@ -58,7 +60,11 @@ def read_moves(state_dir: Path) -> list[Move]:
     p = journal_path(state_dir)
     if not p.exists():
         return []
-    return [Move(**json.loads(line)) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        Move(**json.loads(line))
+        for line in p.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def unique_destination(dst: Path) -> Path:
@@ -85,7 +91,37 @@ def forced_dry_run(state_dir: Path, hours: int, now: float) -> bool:
     return now - installed < hours * 3600
 
 
-def sweep(manifest: Manifest, state_dir: Path, now: float, dry_run: bool) -> tuple[list[Move], list[str]]:
+def _freshness_block(manifest: Manifest, entry: Entry, max_count: int) -> str | None:
+    """Why ``entry`` must not be swept, or ``None`` if sweeping is safe.
+
+    A root entry colliding with a repo under ``src/``/``vendor/`` is a
+    resurrected pre-2026-09-11 path, and the live copy of its data may be
+    the one in ``~`` rather than the one in ``~/src``. Filing that under
+    ``inbox/`` leaves every reader on the stale file — which is what nearly
+    happened to ``~/todo/BACKLOG.md`` on 2026-09-12. Fail closed, and name
+    the file that blocked the sweep so reconciling is a diff, not a hunt.
+    """
+    counterpart = counterpart_for(manifest.home, entry.name, RESURRECTION_BUCKETS)
+    if counterpart is None:
+        return None
+    rel = counterpart.relative_to(manifest.home)
+    newer, over = newer_than_counterpart(entry.path, counterpart, max_count)
+    if over:
+        return (
+            f"{entry.name}: too large to compare against ~/{rel} — reconcile by hand "
+            "(refusing to sweep an unverified resurrection)"
+        )
+    if newer is not None:
+        return (
+            f"{entry.name}: holds data newer than ~/{rel} ({entry.name}/{newer}) — "
+            "reconcile by hand, then fix the tool still writing the old path"
+        )
+    return None
+
+
+def sweep(
+    manifest: Manifest, state_dir: Path, now: float, dry_run: bool
+) -> tuple[list[Move], list[str]]:
     """Move stray root entries to inbox/. Returns (moves, skipped reasons)."""
     if (state_dir / LOCK_NAME).exists():
         return [], ["migration lock present; sweep skipped"]
@@ -94,7 +130,9 @@ def sweep(manifest: Manifest, state_dir: Path, now: float, dry_run: bool) -> tup
     bridges = set(manifest.bridges_paths)
     expired = False
     if manifest.bridges_expires:
-        expired = _dt.date.fromtimestamp(now) >= _dt.date.fromisoformat(manifest.bridges_expires)
+        expired = _dt.date.fromtimestamp(now) >= _dt.date.fromisoformat(
+            manifest.bridges_expires
+        )
     moves: list[Move] = []
     skipped: list[str] = []
     ts = _dt.datetime.fromtimestamp(now).isoformat(timespec="seconds")
@@ -109,13 +147,23 @@ def sweep(manifest: Manifest, state_dir: Path, now: float, dry_run: bool) -> tup
                     entry.path.unlink()
             continue
         if now - entry.mtime < policy.grace_minutes * 60:
-            skipped.append(f"{entry.name}: younger than {policy.grace_minutes} min grace")
+            skipped.append(
+                f"{entry.name}: younger than {policy.grace_minutes} min grace"
+            )
             continue
         if entry.kind != "link":
-            size, count, over = bounded_stats(entry.path, policy.max_entry_bytes, policy.max_entry_count)
+            size, count, over = bounded_stats(
+                entry.path, policy.max_entry_bytes, policy.max_entry_count
+            )
             if over:
-                skipped.append(f"{entry.name}: over sweep limit ({size} B, {count} entries) — move it by hand")
+                skipped.append(
+                    f"{entry.name}: over sweep limit ({size} B, {count} entries) — move it by hand"
+                )
                 continue
+        blocked = _freshness_block(manifest, entry, policy.max_entry_count)
+        if blocked is not None:
+            skipped.append(blocked)
+            continue
         dst = unique_destination(inbox / entry.name)
         moves.append(Move(str(entry.path), str(dst), ts, "root-allow", batch))
         if not dry_run:
@@ -147,5 +195,7 @@ def undo(state_dir: Path, which: str) -> list[Move]:
         undone.append(m)
     remaining = [m for m in moves if m not in undone]
     p = journal_path(state_dir)
-    p.write_text("".join(json.dumps(m.__dict__) + "\n" for m in remaining), encoding="utf-8")
+    p.write_text(
+        "".join(json.dumps(m.__dict__) + "\n" for m in remaining), encoding="utf-8"
+    )
     return undone

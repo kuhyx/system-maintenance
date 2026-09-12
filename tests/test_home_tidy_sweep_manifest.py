@@ -144,3 +144,45 @@ def test_runner(tmp_path: Path) -> None:
     argv = r._argv("ls ~/x $HOME/y", sudo=True)
     assert argv[:2] == ["sudo", "-n"] and argv[-1] == f"ls {tmp_path}/x {tmp_path}/y"
     assert Runner()._env()["HOME"] == os.environ["HOME"]
+
+
+def test_sweep_refuses_to_bury_newer_data(home: Path) -> None:
+    """A resurrected path holding the *live* copy must not be swept.
+
+    Regression for 2026-09-12: the todo desktop wrapper still wrote
+    ~/todo/BACKLOG.md while the MCP read ~/src/todo/BACKLOG.md. Sweeping
+    would have filed the only current backlog under inbox/ and left every
+    reader on the stale file, so the sweep now fails closed and names the
+    offending file.
+    """
+    state = home / ".state"
+    (home / "src" / "todo").mkdir()
+    (home / "src" / "todo" / "BACKLOG.md").write_text("stale")
+    os.utime(home / "src" / "todo" / "BACKLOG.md", (OLD, OLD))
+    (home / "todo").mkdir()
+    (home / "todo" / "BACKLOG.md").write_text("live")
+    _aged(home / "todo")  # past the grace period, so only freshness can block
+
+    moves, skipped = sweep(_manifest(home), state, NOW, dry_run=False)
+
+    assert moves == [] and not read_moves(state)
+    assert (home / "todo" / "BACKLOG.md").read_text() == "live"
+    reason = next(s for s in skipped if s.startswith("todo:"))
+    assert "newer than ~/src/todo" in reason
+    assert "todo/BACKLOG.md" in reason  # names the file, so reconciling is a diff
+
+
+def test_sweep_allows_resurrection_once_reconciled(home: Path) -> None:
+    """Same collision, but src/ already has everything: sweeping is safe."""
+    state = home / ".state"
+    (home / "src" / "todo").mkdir()
+    (home / "src" / "todo" / "BACKLOG.md").write_text("current")
+    (home / "todo").mkdir()
+    (home / "todo" / "BACKLOG.md").write_text("current")
+    os.utime(home / "todo" / "BACKLOG.md", (OLD, OLD))
+    _aged(home / "todo")
+
+    moves, skipped = sweep(_manifest(home), state, NOW, dry_run=False)
+
+    assert [Path(m.dst).name for m in moves] == ["todo"]
+    assert not any(s.startswith("todo:") for s in skipped)

@@ -126,3 +126,36 @@ def test_format_and_write_report(tmp_path: Path) -> None:
     assert format_report([v[0]], nag=True).count("\n") == 2
     out = write_report(tmp_path / "state", "text\n")
     assert out.read_text() == "text\n"
+
+
+def test_old_path_resurrection_rule(home: Path) -> None:
+    """A root entry a src/ repo already owns the name of gets its own finding.
+
+    Regression for 2026-09-12: ~/todo reappeared because the todo desktop
+    wrapper still built the pre-reorganisation path from segments. Reporting
+    it as a generic "root-allow" stray buried the actionable fact -- that a
+    *tool* is writing the old layout -- under a line that reads like clutter.
+    """
+    (home / "src" / "todo").mkdir()
+    (home / "todo").mkdir()
+    (home / "vendor" / "someclone").mkdir()
+    (home / "someclone").mkdir()
+    (home / "plain-stray").mkdir()
+    m = load_manifest(home / "home-tidy.toml", home)
+    rules = [(v.rule, v.path, v.warn) for v in run_check(m)]
+
+    assert ("old-path-resurrection", "todo", False) in rules
+    assert ("old-path-resurrection", "someclone", False) in rules
+    # ...and NOT also reported generically, which would double the nag.
+    assert ("root-allow", "todo", False) not in rules
+    assert ("root-allow", "someclone", False) not in rules
+    # A stray with no counterpart is still an ordinary root-allow finding.
+    assert ("plain-stray", False) == (
+        next(p for r, p, _ in rules if r == "root-allow" and p == "plain-stray"),
+        False,
+    )
+    detail = next(v.detail for v in run_check(m) if v.path == "todo")
+    assert "~/src/todo" in detail and "fix the writer" in detail
+
+    # The resurrection rule leads the report: it is the line that names a fix.
+    assert run_check(m)[0].rule == "old-path-resurrection"
