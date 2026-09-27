@@ -20,11 +20,12 @@ from pathlib import Path
 
 from _home_tidy_apply import Context, apply_plan, read_journal
 from _home_tidy_check import format_report, run_check, write_report
+from _home_tidy_code_paths import rule_code_home_paths
 from _home_tidy_manifest import load_manifest
 from _home_tidy_migrate import build_plan
 from _home_tidy_report import render_plan
 from _home_tidy_run import Runner
-from _home_tidy_sweep import forced_dry_run, sweep, undo
+from _home_tidy_sweep import EMPTY_REASON, forced_dry_run, sweep, undo
 
 _HERE = Path(__file__).resolve().parent
 
@@ -61,7 +62,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def cmd_check(manifest, state_dir: Path) -> int:
     """Lint; the report is printed and persisted for the shell nag."""
-    violations = run_check(manifest)
+    violations = run_check(manifest) + rule_code_home_paths(manifest)
     write_report(state_dir, format_report(violations, nag=True))
     sys.stdout.write(format_report(violations) or "home-tidy: clean\n")
     return 1 if any(not v.warn for v in violations) else 0
@@ -76,7 +77,10 @@ def cmd_sweep(manifest, state_dir: Path, dry_run: bool) -> int:
         print("sweep: still inside the post-install dry-run window")
     moves, skipped = sweep(manifest, state_dir, now, dry)
     for m in moves:
-        print(f"{'would move' if dry else 'moved'}: {m.src} -> {m.dst}")
+        if m.reason == EMPTY_REASON:
+            print(f"{'would remove' if dry else 'removed'} empty skeleton: {m.src}")
+        else:
+            print(f"{'would move' if dry else 'moved'}: {m.src} -> {m.dst}")
     for s in skipped:
         print(f"skipped: {s}")
     return cmd_check(manifest, state_dir)

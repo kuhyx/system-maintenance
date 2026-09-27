@@ -21,6 +21,14 @@ git_only = ["src", "vendor"]
 warn_bucket_size = 21
 broad_buckets = ["src", "data", "archive", "inbox", "Downloads"]
 
+[code_paths]
+# Code that no repo's pre-commit path gate covers, scanned on every check.
+# A skill building Path.home() / "learn" put ~/learn back in root every day
+# from 2026-09-18 to 09-26, and each sweep only filed the symptom in inbox/.
+# The checker is the same one the repos' home-path-layout hook runs.
+roots = ["~/.claude/skills", "~/.claude/scripts", "~/.claude/hooks"]
+checker = "~/src/utils/scripts/check_home_paths.sh"
+
 [sweep]
 # A root entry younger than this is left alone (something may still be
 # writing it).

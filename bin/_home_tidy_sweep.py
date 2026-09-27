@@ -4,8 +4,12 @@ Guardrails, all from the manifest: entries younger than the grace period
 are left alone (something may still be writing them), anything over the
 size/count limit is reported instead of moved, dotfiles and allowlisted
 buckets are never touched, and a lock file keeps the timer out of the way
-of a running migration. Nothing is ever deleted; every move is appended to
-``moves.jsonl`` so ``undo`` can replay it backwards.
+of a running migration. Every move is appended to ``moves.jsonl`` so
+``undo`` can replay it backwards. The one deletion: a directory tree holding
+no file or symlink at any depth (an ``empty-skeleton``) is rmdir'd instead of
+filed. Those are build tools recreating a pre-migration path from a stale
+cache (``~/signal-bot/app/build/...``, 2026-09-12); in ``inbox/`` they carry
+nothing to triage and only ever turn into age nags.
 """
 
 from __future__ import annotations
@@ -29,6 +33,7 @@ MOVES_NAME = "moves.jsonl"
 # point at the new paths.
 MIGRATION_MOVES_NAME = "migration-moves.jsonl"
 INSTALL_MARK = "installed-at"
+EMPTY_REASON = "empty-skeleton"
 
 
 @dataclass(frozen=True)
@@ -77,6 +82,32 @@ def unique_destination(dst: Path) -> Path:
         if not cand.exists() and not cand.is_symlink():
             return cand
         n += 1
+
+
+def is_empty_skeleton(path: Path, max_count: int) -> bool:
+    """True for a real directory with no file or symlink anywhere below it.
+
+    Walks at most ``max_count`` directories; a bigger tree is not treated as
+    empty, so the normal sweep limits still apply to it.
+    """
+    if path.is_symlink() or not path.is_dir():
+        return False
+    seen = 0
+    for root, dirs, files in os.walk(path):
+        if files or any(os.path.islink(os.path.join(root, d)) for d in dirs):
+            return False
+        seen += len(dirs)
+        if seen > max_count:
+            return False
+    return True
+
+
+def remove_empty_tree(path: Path) -> None:
+    """rmdir bottom-up. Raises ``OSError`` if a file appeared since the check."""
+    for root, dirs, _files in os.walk(path, topdown=False):
+        for d in dirs:
+            os.rmdir(os.path.join(root, d))
+    os.rmdir(path)
 
 
 def forced_dry_run(state_dir: Path, hours: int, now: float) -> bool:
@@ -160,6 +191,15 @@ def sweep(
                     f"{entry.name}: over sweep limit ({size} B, {count} entries) — move it by hand"
                 )
                 continue
+        if is_empty_skeleton(entry.path, policy.max_entry_count):
+            if not dry_run:
+                try:
+                    remove_empty_tree(entry.path)
+                except OSError as exc:
+                    skipped.append(f"{entry.name}: empty-skeleton removal failed ({exc})")
+                    continue
+            moves.append(Move(str(entry.path), "", ts, EMPTY_REASON, batch))
+            continue
         blocked = _freshness_block(manifest, entry, policy.max_entry_count)
         if blocked is not None:
             skipped.append(blocked)
@@ -187,6 +227,8 @@ def undo(state_dir: Path, which: str) -> list[Move]:
         selected = [m for m in moves if m.ts.startswith(which)]
     undone: list[Move] = []
     for m in reversed(selected):
+        if m.reason == EMPTY_REASON:  # nothing was kept, so nothing to restore
+            continue
         src, dst = Path(m.src), Path(m.dst)
         if not (dst.exists() or dst.is_symlink()) or src.exists() or src.is_symlink():
             continue

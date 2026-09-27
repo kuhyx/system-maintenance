@@ -92,6 +92,8 @@ class Manifest:
     rebind: RebindConfig
     verify_user: tuple[str, ...]
     verify_sudo: tuple[str, ...]
+    code_roots: tuple[str, ...] = ()
+    code_checker: str = ""
     raw: dict = field(repr=False, default_factory=dict)
 
     def expand(self, value: str) -> Path:
@@ -137,6 +139,7 @@ def load_manifest(path: Path, home: Path) -> Manifest:
     rebind = raw.get("rebind", {})
     verify = raw.get("verify", {})
     bridges = raw.get("bridges", {})
+    code = raw.get("code_paths", {})
     hooks = tuple(
         Hook(
             entry=h["entry"],
@@ -160,6 +163,8 @@ def load_manifest(path: Path, home: Path) -> Manifest:
             inbox_nag_days=int(sweep["inbox_nag_days"]),
             dry_run_hours_after_install=int(sweep.get("dry_run_hours_after_install", 0)),
         ),
+        code_roots=tuple(expand_home(r, home) for r in code.get("roots", ())),
+        code_checker=expand_home(str(code.get("checker", "")), home),
         bridges_expires=str(bridges.get("expires", "")),
         bridges_paths=_tuple(bridges.get("paths")),
         xdg=dict(raw.get("xdg", {})),
