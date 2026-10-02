@@ -36,3 +36,28 @@
         systemctl reload-or-restart rsyslog > /dev/null 2>&1 || true
     endscript
 }
+
+# pacman writes this itself and Arch ships no rotation for it; it had grown
+# unrotated to 7 MB when the control-panel dashboard flagged it (2026-10-02).
+/var/log/pacman.log {
+    monthly
+    rotate 6
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 root root
+}
+
+# Written by digital-wellbeing's shutdown-timer-monitor (lib/ms_monitor.sh).
+# Rotated here because that installer is at the 250-line cap; 13 MB unrotated
+# on 2026-10-02. copytruncate: the monitor keeps the file open between ticks.
+/var/log/shutdown-timer-monitor.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
