@@ -106,43 +106,13 @@ restore_timer() {
 	fi
 }
 
-# Function to monitor timer with systemd events
-monitor_with_dbus() {
-	log_message "Starting shutdown timer monitoring with D-Bus events"
-	local last_check_ts=0
-
-	# Use busctl to monitor systemd unit changes
-	# Fall back to polling if this fails.
-	if command -v busctl &>/dev/null; then
-		# Monitor for unit state changes
-		busctl monitor --system org.freedesktop.systemd1 2>/dev/null |
-			while read -r line; do
-				# Check if the line mentions our timer
-				if [[ $line == *"$TIMER_NAME"* || $line == *"$SERVICE_NAME"* ]]; then
-					local now_ts
-					current_epoch now_ts
-					if (( now_ts - last_check_ts < CHECK_INTERVAL )); then
-						continue
-					fi
-					last_check_ts=$now_ts
-					# Quiet on the happy path: the timer now fires every
-					# minute, so "event detected" here is the normal heartbeat,
-					# not a signal. Logging it wrote 13 MB of noise to
-					# /var/log/shutdown-timer-monitor.log. timer_needs_restoration
-					# logs the specific problem when there is one.
-					if timer_needs_restoration; then
-						log_message "Systemd event detected for shutdown timer"
-						restore_timer
-					fi
-				fi
-			done
-	else
-		log_message "busctl not available, falling back to polling"
-		monitor_with_polling
-	fi
-}
-
-# Function to monitor with polling (primary method for reliability)
+# Poll only. Until 2026-10-24 this preferred a root `busctl monitor --system
+# org.freedesktop.systemd1 | while read` loop. Whenever bash fell behind the
+# firehose (daemon-reloads, the per-minute timer tick), the queued copies
+# filled dbus-broker's 'bytes' quota that every root peer shares, and the
+# broker disconnected PID1 and logind from the bus, which killed the X session.
+# The timer fires every minute and a watchdog checks every 5 min, so the
+# D-Bus latency gain was worth nothing.
 monitor_with_polling() {
 	log_message "Starting shutdown timer monitoring with polling (interval: ${CHECK_INTERVAL}s)"
 
@@ -167,13 +137,7 @@ start_monitoring() {
 		log_message "Initial check: Timer is properly configured"
 	fi
 
-	# Prefer D-Bus monitoring, with polling as the fallback path.
-	if command -v busctl &>/dev/null; then
-		monitor_with_dbus
-	else
-		log_message "busctl not available, falling back to polling"
-		monitor_with_polling
-	fi
+	monitor_with_polling
 }
 
 # Main execution
