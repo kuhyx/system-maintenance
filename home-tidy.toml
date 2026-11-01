@@ -221,8 +221,6 @@ max_file_bytes = 5000000
 "depotdownloader" = "vendor/depotdownloader"
 "Mapperatorinator" = "vendor/Mapperatorinator"
 "runnerup" = "vendor/runnerup"
-"syncyomi-src" = "vendor/syncyomi-src"
-"tachiyomisy" = "vendor/tachiyomisy"
 "warriorjs" = "vendor/warriorjs"
 # --- services: compose stacks and daemons ---------------------------------
 "actions-runner" = "services/actions-runner"
@@ -232,8 +230,6 @@ max_file_bytes = 5000000
 "personal-website-serve" = "services/personal-website-serve"
 "searxng" = "services/searxng"
 "signal-api" = "services/signal-api"
-"syncyomi" = "services/syncyomi"
-"syncyomi_test" = "services/syncyomi_test"
 # --- data -----------------------------------------------------------------
 "artgate-output" = "data/artgate-output"
 "aseprite" = "data/aseprite-sprites"
@@ -301,8 +297,6 @@ max_file_bytes = 5000000
 "signal_bot.sqlite3.bak-20260830-201436" = "archive/2026-08-30-signal_bot.sqlite3.bak-201436"
 "steam-backlog-enforcer-handoff-7d61d137" = "archive/2026-08-24-steam-backlog-enforcer-handoff-7d61d137"
 "steam-state-backup-20260804" = "archive/2026-08-04-steam-state-backup"
-"syncyomi_safe_2026-08-28" = "archive/2026-08-28-syncyomi_safe"
-"tachiyomisy-syncfix-2026-08-28.patch" = "archive/2026-08-28-tachiyomisy-syncfix.patch"
 "todo-desktop-profile.backup-2026-07-26" = "archive/2026-07-26-todo-desktop-profile.backup"
 "todo_backlog_backup_2026-07-11.db" = "archive/2026-07-11-todo_backlog_backup.db"
 # --- inbox: zero-reference loose files; the 14-day nag surfaces them -------
@@ -363,11 +357,6 @@ after = ["docker compose -f ~/services/gitea/docker-compose.yml up -d"]
 entry = "searxng"
 before = ["docker compose -f ~/services/searxng/docker-compose.yml down"]
 after = ["docker compose -f ~/services/searxng/docker-compose.yml up -d"]
-
-[[hook]]
-entry = "syncyomi"
-before = ["docker compose -f ~/services/syncyomi/docker-compose.yml down"]
-after = ["docker compose -f ~/services/syncyomi/docker-compose.yml up -d"]
 
 [[hook]]
 entry = "kcd2-dice-serve"
@@ -436,7 +425,7 @@ user = [
 sudo = ["systemctl daemon-reload"]
 # Units restarted after daemon-reload (only if currently active).
 restart_user_units = [
-  "endurain-import.service", "syncyomi-guard.service", "morning-routine.service",
+  "endurain-import.service", "morning-routine.service",
   "freedays-sync.service", "workout-locker.service", "workout-sync.service",
   "screen-locker-web.service", "diet-guard-gate.service", "diet-guard-sync.service",
   "home-guard-gate.service", "leetcode-guard.service", "leetcode-guard-web.service",
@@ -485,7 +474,6 @@ user = [
   "docker ps --format '{{.Names}}' | grep -qx signal-api",
   "docker compose -f ~/services/gitea/docker-compose.yml ps --status running -q | grep -q .",
   "docker compose -f ~/services/searxng/docker-compose.yml ps --status running -q | grep -q .",
-  "docker compose -f ~/services/syncyomi/docker-compose.yml ps --status running -q | grep -q .",
   "docker compose -f ~/services/kcd2-dice-serve/docker-compose.yml ps --status running -q | grep -q .",
   "docker compose -f ~/services/personal-website-serve/docker-compose.yml ps --status running -q | grep -q .",
   "docker compose -f ~/src/testsAndMisc/endurain/docker-compose.yml ps --status running -q | grep -q .",
