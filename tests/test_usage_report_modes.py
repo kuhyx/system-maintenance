@@ -20,16 +20,12 @@ if TYPE_CHECKING:
     import pytest
 
 
-# Aware timezone matching how the parser localizes naive timestamps, so epochs
-# computed here line up with `_pmon_row_epoch`'s `.astimezone()` conversion.
-_LOCAL_TZ = _dt.datetime.now().astimezone().tzinfo
-
-
 def _at(
     year: int, month: int, day: int, hour: int = 0, minute: int = 0
 ) -> _dt.datetime:
     """Build an aware local datetime for tests."""
-    return _dt.datetime(year, month, day, hour, minute, tzinfo=_LOCAL_TZ)
+    # Localize per date (DST), as the parser's .astimezone() does.
+    return _dt.datetime(year, month, day, hour, minute).astimezone()
 
 
 # --------------------------------------------------------------------------- #
