@@ -9,16 +9,10 @@ LOG_FILE="/var/log/hosts-file-monitor.log"
 HOSTS_FILE="/etc/hosts"
 HOSTS_INSTALL_SCRIPT="__HOSTS_INSTALL_SCRIPT__"
 readonly MIN_HOSTS_LINES=1000
-readonly EVENT_COOLDOWN_S=5
-
-current_epoch() {
-  local out_var="${1:-}"
-  if [[ -n $out_var ]]; then
-    printf -v "$out_var" '%(%s)T' -1
-  else
-    printf '%(%s)T\n' -1
-  fi
-}
+# Event drain: after an event, swallow already-queued lines until the pipe has
+# been quiet for DRAIN_QUIET_S (or DRAIN_MAX_S passed), then run ONE check.
+readonly DRAIN_QUIET_S=0.5
+readonly DRAIN_MAX_S=10
 
 wait_seconds() {
   local timeout_s=$1
@@ -45,48 +39,29 @@ log_message() {
   printf '%s\n' "$msg" >> "$LOG_FILE" 2>/dev/null || true
 }
 
-# Function to check if hosts file needs restoration
+# Function to check if hosts file needs restoration.
+# Uses grep (a few large reads) instead of a bash line loop: the file has ~170k
+# lines, and every bash read() of /etc/hosts is an IN_ACCESS event for each
+# watcher of /etc (tailscaled). FAIL CLOSED: any grep error (exit >= 2) or
+# non-match means restore, never "intact".
 needs_restoration() {
-  # Check if file exists
   if [[ ! -f $HOSTS_FILE ]]; then
     return 0 # File missing, needs restoration
   fi
 
-  # Check if file is empty or too small (less than MIN_HOSTS_LINES indicates tampering)
-  local line_count=0
-  local has_custom_entries=0
-  local has_stevenblack_entries=0
-  local line=""
-
-  while IFS= read -r line || [[ -n $line ]]; do
-    line_count=$((line_count + 1))
-
-    if [[ $has_custom_entries -eq 0 && $line == *"Custom blocking entries"* ]]; then
-      has_custom_entries=1
-    fi
-
-    if [[ $has_stevenblack_entries -eq 0 && $line == *"StevenBlack"* ]]; then
-      has_stevenblack_entries=1
-    fi
-
-    if (( line_count >= MIN_HOSTS_LINES && has_custom_entries == 1 && has_stevenblack_entries == 1 )); then
-      return 1 # File seems intact
-    fi
-  done < "$HOSTS_FILE"
-
-  if [[ $line_count -lt $MIN_HOSTS_LINES ]]; then
-    return 0 # File too small, likely tampered with
+  # '' matches every line, incl. a final unterminated one (same as the old loop).
+  local line_count=0 grep_rc=0
+  line_count=$(grep -c '' -- "$HOSTS_FILE") || grep_rc=$?
+  if (( grep_rc > 1 )); then
+    return 0 # grep error: fail closed
+  fi
+  if [[ ! $line_count =~ ^[0-9]+$ ]] || (( line_count < MIN_HOSTS_LINES )); then
+    return 0 # File too small (or unreadable count), likely tampered with
   fi
 
-  # Check if our custom entries are missing
-  if [[ $has_custom_entries -eq 0 ]]; then
-    return 0 # Our custom entries missing, needs restoration
-  fi
-
-  # Check if StevenBlack entries are missing
-  if [[ $has_stevenblack_entries -eq 0 ]]; then
-    return 0 # StevenBlack entries missing, needs restoration
-  fi
+  # -q stops at the first hit; rc 1 (absent) and rc >= 2 (error) both restore.
+  grep -qF -- 'Custom blocking entries' "$HOSTS_FILE" || return 0
+  grep -qF -- 'StevenBlack' "$HOSTS_FILE" || return 0
 
   return 1 # File seems intact
 }
@@ -108,22 +83,28 @@ restore_hosts_file() {
   fi
 }
 
+# Swallow every already-queued event line so a burst costs ONE check. Bounded
+# by DRAIN_MAX_S so a constant trickle cannot starve the check. Events that
+# arrive later stay in the pipe and trigger the next check: nothing is dropped.
+drain_queued_events() {
+  local deadline=$((SECONDS + DRAIN_MAX_S))
+  while IFS= read -r -t "$DRAIN_QUIET_S" _; do
+    if (( SECONDS >= deadline )); then
+      break
+    fi
+  done
+}
+
 # Function to monitor with inotifywait
 monitor_with_inotify() {
   log_message "Starting hosts file monitoring with inotify"
-  local last_check_ts=0
 
   # Monitor the hosts file and its directory for various events
   inotifywait -m -e delete,move,modify,attrib,create --format '%w%f %e %T' --timefmt '%Y-%m-%d %H:%M:%S' "$HOSTS_FILE" /etc/ 2> /dev/null |
     while read -r file event time; do
       # Check if the event is related to our hosts file
       if [[ $file == "$HOSTS_FILE" ]] || [[ $file == "/etc/hosts" ]]; then
-        local now_ts
-        current_epoch now_ts
-        if (( now_ts - last_check_ts < EVENT_COOLDOWN_S )); then
-          continue
-        fi
-        last_check_ts=$now_ts
+        drain_queued_events
 
         log_message "Event detected: $event on $file at $time"
 
