@@ -62,7 +62,8 @@ repos:
       # Runs WITHOUT --strict on purpose. Offline it degrades to the cached
       # answer and passes with a loud banner; `--no-verify` is banned here, so
       # a hook that hard-failed on a flaky connection would leave no way to
-      # commit at all. CI, always online, is the strict authority.
+      # commit at all. The strict run is local only (CI does not check
+      # freshness): scripts/check_dependency_freshness.sh --all --strict
       - id: dependency-freshness
         name: dependencies on newest stable
         entry: scripts/check_dependency_freshness.sh

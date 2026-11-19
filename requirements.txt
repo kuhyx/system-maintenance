@@ -2,4 +2,4 @@
 # thing CI installs is exact-pinned and therefore checkable by the
 # dependency-freshness gate, rather than resolving to whatever pytest was
 # newest on the runner that day.
-pytest==9.1.1
+pytest==9.2.0
