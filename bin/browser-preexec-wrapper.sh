@@ -53,11 +53,14 @@ if [[ ! -x $real_bin || $prog_name == "browser-preexec-wrapper.sh" ]]; then
 	fi
 fi
 
-# Best-effort: install hosts file quietly; don't block browser startup
+# Best-effort: install hosts file quietly; don't block browser startup.
+# --skip-if-busy: when another run (timer, hosts-file-monitor) holds the
+# install lock, wait ~5 s and move on instead of up to 300 s; that run is
+# already refreshing /etc/hosts, and chattr +i keeps the blocks meanwhile.
 if command -v sudo >/dev/null 2>&1; then
-	sudo -n "$HOSTS_INSTALL_SCRIPT" >/dev/null 2>&1 || true
+	sudo -n "$HOSTS_INSTALL_SCRIPT" --skip-if-busy >/dev/null 2>&1 || true
 else
-	"$HOSTS_INSTALL_SCRIPT" >/dev/null 2>&1 || true
+	"$HOSTS_INSTALL_SCRIPT" --skip-if-busy >/dev/null 2>&1 || true
 fi
 
 # Only Chromium-family browsers understand --enable-logging/--v; everything else

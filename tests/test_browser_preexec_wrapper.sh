@@ -60,7 +60,8 @@ STUB_HOSTS="$TMP_DIR/hosts-install.sh"
 sed "s|__HOSTS_INSTALL_SCRIPT__|$STUB_HOSTS|g" "$TARGET_SCRIPT" >"$WRAPPER"
 chmod +x "$WRAPPER"
 
-printf '#!/bin/bash\ntouch %q\n' "$HOSTS_MARKER" >"$STUB_HOSTS"
+# The stub records its arguments in the marker, so test 2 can check the flag.
+printf '#!/bin/bash\nprintf "%%s\\n" "$*" >%q\n' "$HOSTS_MARKER" >"$STUB_HOSTS"
 chmod +x "$STUB_HOSTS"
 
 # Fake sudo: drop -n and run the command as-is.
@@ -101,6 +102,10 @@ awk -v e="$elapsed" -v b="$PIPE_BUDGET_SEC" 'BEGIN { exit !(e <= b) }' ||
 
 # 2. The hosts preexec still runs before every launch.
 [[ -f $HOSTS_MARKER ]] || fail "hosts install script was not run before the browser"
+# A browser launch must not queue behind another install.sh run (up to 300 s
+# on its lock): it passes --skip-if-busy, which waits ~5 s and exits 0.
+grep -qx -- '--skip-if-busy' "$HOSTS_MARKER" ||
+  fail "hosts install ran with args '$(cat "$HOSTS_MARKER")', expected --skip-if-busy"
 
 # 3. The browser's exit code still propagates.
 set +e
