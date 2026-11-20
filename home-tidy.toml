@@ -183,6 +183,7 @@ max_file_bytes = 5000000
 "kcd2-dice-solver" = "src/kcd2-dice-solver"
 "konbini-67" = "src/konbini-67"
 "kuhylog/kuhylog" = "src/kuhylog"
+"kado-no-akari" = "src/kado-no-akari"  # co-owned: Sepci0 remote, kuhy commits
 "kuhytrack" = "src/kuhytrack"
 "leetcode-guard" = "src/leetcode-guard"
 "levels-of-typing" = "src/levels-of-typing"
