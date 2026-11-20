@@ -63,7 +63,9 @@ install_everything() {
 	local u
 	for u in periodic-system-maintenance.service periodic-system-maintenance.timer \
 		periodic-system-startup.service hosts-file-monitor.service \
-		auto-system-update.service auto-system-update.timer; do
+		auto-system-update.service auto-system-update.timer \
+		reflector.service.d/retry-on-dns.conf; do
+		mkdir -p "$(dirname "$SYSROOT/etc/systemd/system/$u")"
 		cp "$LIVE_REPO/systemd/$u" "$SYSROOT/etc/systemd/system/$u"
 	done
 }

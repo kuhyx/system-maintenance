@@ -33,6 +33,7 @@ readonly ROOT_UNITS=(
 	periodic-system-maintenance.service periodic-system-maintenance.timer
 	periodic-system-startup.service hosts-file-monitor.service
 	auto-system-update.service auto-system-update.timer
+	reflector.service.d/retry-on-dns.conf
 )
 readonly ROOT_ACTIVE=(
 	periodic-system-maintenance.timer auto-system-update.timer

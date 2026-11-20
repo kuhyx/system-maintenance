@@ -2,6 +2,10 @@
 Description=System Maintenance on Startup (Pacman Wrapper & Hosts File)
 After=network-online.target systemd-resolved.service
 Wants=network-online.target
+# network-online is reached before DNS works here (resolved is masked), so the
+# hosts download failed at boot. Retry instead of staying in --failed.
+StartLimitIntervalSec=900
+StartLimitBurst=5
 
 [Service]
 Type=oneshot
@@ -10,6 +14,8 @@ ExecStart=/usr/local/bin/periodic-system-maintenance.sh
 StandardOutput=journal
 StandardError=journal
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=60
 
 # Timeout settings
 TimeoutStartSec=300
