@@ -162,9 +162,19 @@ browser_pid=$!
 # recent half and continue appending. Checks once a minute — the measured burst
 # rate (~2 MB/45s of navigation, ~0 idle) can't overshoot 32 MB meaningfully in
 # that window, and a 1/min poll costs nothing next to the browser itself.
+#
+# Its stdio is /dev/null and its sleep dies with it. Until 2026-11-20 the
+# `sleep 60` inherited the wrapper's stdout/stderr and outlived the kill below,
+# so any caller reading the wrapper through a pipe or $(...) hung up to 60 s
+# after the browser had already exited (tests/test_browser_preexec_wrapper.sh).
 (
+	sleep_pid=""
+	trap '[[ -n $sleep_pid ]] && kill "$sleep_pid" 2>/dev/null; exit 0' TERM
 	while kill -0 "$browser_pid" 2>/dev/null; do
-		sleep 60
+		# Backgrounded + wait, so TERM interrupts the wait and the trap runs now.
+		sleep 60 &
+		sleep_pid=$!
+		wait "$sleep_pid" || true
 		size="$(stat -c %s "$log_file" 2>/dev/null || echo 0)"
 		if ((size > LOG_MAX_BYTES)); then
 			tail -c "$((LOG_MAX_BYTES / 2))" "$log_file" >"${log_file}.trim" 2>/dev/null &&
@@ -172,7 +182,7 @@ browser_pid=$!
 				echo "=== log trimmed to newest $((LOG_MAX_BYTES / 2)) bytes at $(date '+%H:%M:%S') ===" >>"$log_file"
 		fi
 	done
-) &
+) </dev/null >/dev/null 2>&1 &
 watchdog_pid=$!
 
 # A signal aimed at the wrapper is recorded as the wrapper's own death, and the
