@@ -57,10 +57,19 @@ fi
 # --skip-if-busy: when another run (timer, hosts-file-monitor) holds the
 # install lock, wait ~5 s and move on instead of up to 300 s; that run is
 # already refreshing /etc/hosts, and chattr +i keeps the blocks meanwhile.
+# --cached-only: build from the cached upstream list with no network call, so
+# a stalled network cannot hold the launch (it once could, for ~2 min); the
+# hourly timer downloads. A failed install (e.g. no cache yet) still opens the
+# browser -- chattr +i, the bind mount and hosts-file-monitor keep the blocks
+# -- but leaves a journal line, since its output is discarded here.
+hosts_install_rc=0
 if command -v sudo >/dev/null 2>&1; then
-	sudo -n "$HOSTS_INSTALL_SCRIPT" --skip-if-busy >/dev/null 2>&1 || true
+	sudo -n "$HOSTS_INSTALL_SCRIPT" --skip-if-busy --cached-only >/dev/null 2>&1 || hosts_install_rc=$?
 else
-	"$HOSTS_INSTALL_SCRIPT" --skip-if-busy >/dev/null 2>&1 || true
+	"$HOSTS_INSTALL_SCRIPT" --skip-if-busy --cached-only >/dev/null 2>&1 || hosts_install_rc=$?
+fi
+if ((hosts_install_rc != 0)); then
+	logger -t browser-preexec-wrapper "hosts install exited ${hosts_install_rc} before launching ${prog_name}; launching anyway" 2>/dev/null || true
 fi
 
 # Only Chromium-family browsers understand --enable-logging/--v; everything else

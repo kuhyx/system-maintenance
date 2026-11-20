@@ -60,9 +60,23 @@ STUB_HOSTS="$TMP_DIR/hosts-install.sh"
 sed "s|__HOSTS_INSTALL_SCRIPT__|$STUB_HOSTS|g" "$TARGET_SCRIPT" >"$WRAPPER"
 chmod +x "$WRAPPER"
 
-# The stub records its arguments in the marker, so test 2 can check the flag.
-printf '#!/bin/bash\nprintf "%%s\\n" "$*" >%q\n' "$HOSTS_MARKER" >"$STUB_HOSTS"
+# The stub records one argument per line in the marker, so test 2 can check
+# each flag, and exits STUB_RC so test 5 can make the install fail.
+cat >"$STUB_HOSTS" <<EOF
+#!/bin/bash
+printf '%s\n' "\$@" >$(printf %q "$HOSTS_MARKER")
+exit "\${STUB_RC:-0}"
+EOF
 chmod +x "$STUB_HOSTS"
+
+# Fake logger: the wrapper discards the installer's output, so a failed
+# install must leave a journal line; this records it instead.
+LOGGER_LOG="$TMP_DIR/logger.log"
+cat >"$BIN_DIR/logger" <<EOF
+#!/bin/bash
+printf '%s\n' "\$*" >>$(printf %q "$LOGGER_LOG")
+EOF
+chmod +x "$BIN_DIR/logger"
 
 # Fake sudo: drop -n and run the command as-is.
 cat >"$BIN_DIR/sudo" <<'EOF'
@@ -106,6 +120,10 @@ awk -v e="$elapsed" -v b="$PIPE_BUDGET_SEC" 'BEGIN { exit !(e <= b) }' ||
 # on its lock): it passes --skip-if-busy, which waits ~5 s and exits 0.
 grep -qx -- '--skip-if-busy' "$HOSTS_MARKER" ||
   fail "hosts install ran with args '$(cat "$HOSTS_MARKER")', expected --skip-if-busy"
+# Nor wait on the network: --cached-only builds /etc/hosts from the cached
+# list (a stalled download held the launch up to ~2 min); the timer downloads.
+grep -qx -- '--cached-only' "$HOSTS_MARKER" ||
+  fail "hosts install ran with args '$(tr '\n' ' ' <"$HOSTS_MARKER")', expected --cached-only"
 
 # 3. The browser's exit code still propagates.
 set +e
@@ -118,5 +136,17 @@ set -e
 log=$(find "$TMP_DIR/state/browser-crash-logs" -name "$NAME-*.log" -newer "$HOSTS_MARKER" | head -1)
 [[ -n $log ]] || fail "no per-launch log written"
 grep -q '^exit code: 3$' "$log" || fail "log $log lacks the exit verdict"
+
+# 5. A failed install (e.g. --cached-only with no cache) still starts the
+# browser -- the blocks stay enforced by chattr +i and the file guard -- but
+# leaves a journal line instead of failing silently.
+rm -f "$HOSTS_MARKER" "$LOGGER_LOG"
+set +e
+(cd "$TMP_DIR" && STUB_RC=1 timeout "$RUN_TIMEOUT_SEC" "${run_env[@]}" "$WRAPPER" "$FAKE_BROWSER" >/dev/null 2>&1)
+rc=$?
+set -e
+[[ $rc -eq 0 ]] || fail "wrapper exited $rc after a failed hosts install, expected the browser's 0"
+grep -qs 'hosts install exited 1' "$LOGGER_LOG" ||
+  fail "a failed hosts install left no journal line (logger got: '$(cat "$LOGGER_LOG" 2>/dev/null)')"
 
 echo "PASS: browser-preexec-wrapper"
