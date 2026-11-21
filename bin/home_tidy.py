@@ -18,6 +18,7 @@ import datetime as _dt
 import sys
 from pathlib import Path
 
+from _credit import credit_epilog
 from _home_tidy_apply import Context, apply_plan, read_journal
 from _home_tidy_check import format_report, run_check, write_report
 from _home_tidy_code_paths import rule_code_home_paths
@@ -41,7 +42,7 @@ def default_state_dir(home: Path) -> Path:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, epilog=credit_epilog())
     parser.add_argument("--manifest", type=Path, default=None, help="manifest path (default: repo root)")
     parser.add_argument("--home", type=Path, default=None, help="home directory (default: ~)")
     parser.add_argument("--state-dir", type=Path, default=None, help="state directory")

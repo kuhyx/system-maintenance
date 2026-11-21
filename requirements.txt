@@ -2,4 +2,6 @@
 # thing CI installs is exact-pinned and therefore checkable by the
 # dependency-freshness gate, rather than resolving to whatever pytest was
 # newest on the runner that day.
+# kuhy-credit gives --help its credit line; without it the scripts still run
 pytest==9.2.0
+kuhy-credit @ git+https://github.com/kuhyx/utils@kuhy-credit-v0.3.0#subdirectory=kuhy_credit

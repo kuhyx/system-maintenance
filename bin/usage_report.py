@@ -28,6 +28,7 @@ import argparse
 import datetime as _dt
 from pathlib import Path
 
+from _credit import credit_epilog
 from _usage_report_run import _run_since, _run_single_day
 
 _DEFAULT_TOP = 15
@@ -42,7 +43,7 @@ def _is_single_day_mode(args: argparse.Namespace) -> bool:
 
 def _build_parser() -> argparse.ArgumentParser:
     """Construct the command-line argument parser."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, epilog=credit_epilog())
     parser.add_argument(
         "--date",
         default=None,
